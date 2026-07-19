@@ -855,7 +855,13 @@ static void parse_match_arms(P *p, SnList *out) {
         SnMatchArm *arm = (SnMatchArm *)sn_arena_calloc(p->arena, sizeof(SnMatchArm));
         arm->span = cur(p)->span;
         arm->pattern = parse_pattern(p);
-        if (!expect(p, SN_TOK_FATARROW)) {
+        /* Optional guard: `pattern if <expr> -> body`. The arm reads as a
+         * lambda whose parameters are the pattern bindings, so the guard is
+         * the validation applied to those bindings before the body runs. */
+        if (accept(p, SN_TOK_IF)) {
+            arm->guard = parse_expr(p);
+        }
+        if (!expect(p, SN_TOK_ARROW)) {
             break;
         }
         if (at(p, SN_TOK_LBRACE)) {

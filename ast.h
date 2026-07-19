@@ -112,6 +112,7 @@ struct SnPattern {
 
 struct SnMatchArm {
     SnPattern *pattern;
+    SnExpr *guard; /* `if <expr>` validation predicate, or NULL */
     SnExpr *value; /* arm body as expression, or NULL */
     SnStmt *body;  /* arm body as block/statement, or NULL */
     SnSpan span;
