@@ -272,7 +272,12 @@ static SnType *parse_type(P *p) {
             }
         }
         expect(p, SN_TOK_RPAREN);
-        if (accept(p, SN_TOK_ARROW) || accept(p, SN_TOK_TILDE_ARROW)) {
+        /* The return type is introduced by `:` in the `func` form — `func(): T`
+         * is what the corpus writes, mirroring `method f(): T`. The `->` and
+         * `~>` forms are also accepted; `(A) -> R` below is the arrow-only
+         * spelling. Absent all three, the type is `func(...)` returning unit. */
+        if (accept(p, SN_TOK_COLON) || accept(p, SN_TOK_ARROW) ||
+            accept(p, SN_TOK_TILDE_ARROW)) {
             t->ret = parse_type(p);
         }
         return wrap_array_suffix(p, t);
@@ -508,6 +513,26 @@ static SnExpr *parse_lambda(P *p) {
     }
     expect(p, SN_TOK_RPAREN);
     expect(p, SN_TOK_ARROW);
+    /* A lambda may declare its return type before a block body:
+     * `(row: int) -> bool { ... }`. That is ambiguous with an expression body
+     * whose first token also starts a type — `(x) -> foo` — so speculate: parse
+     * a type and keep it only if a `{` follows. Otherwise rewind and treat the
+     * whole thing as an expression body. Same idiom as try_generic_call_args. */
+    if (!at(p, SN_TOK_LBRACE)) {
+        size_t save_pos = p->pos;
+        int save_errors = p->errors;
+        int save_panic = p->panic;
+        p->panic = 1;
+        SnType *ret = parse_type(p);
+        int ok = ret != NULL && at(p, SN_TOK_LBRACE);
+        p->panic = save_panic;
+        p->errors = save_errors;
+        if (ok) {
+            e->type = ret;
+        } else {
+            p->pos = save_pos;
+        }
+    }
     if (at(p, SN_TOK_LBRACE)) {
         e->body = parse_block(p);
     } else {
@@ -918,11 +943,12 @@ static SnStmt *parse_stmt(P *p) {
     case SN_TOK_IF: {
         advance_p(p);
         SnStmt *s = new_stmt(p, SN_STMT_IF, span);
-        int paren = accept(p, SN_TOK_LPAREN);
+        /* Do not treat a leading `(` as a condition wrapper: in
+         * `if (isGet || isPost) && selected(x) {` the parens are a sub-expression,
+         * not a wrapper, and consuming them here strands the `&&`. parse_expr
+         * already parses `(...)` as a primary, so the fully-parenthesised form
+         * `if (cond) {` falls out of the same path. */
         s->expr = parse_expr(p);
-        if (paren) {
-            expect(p, SN_TOK_RPAREN);
-        }
         s->then_br = at(p, SN_TOK_LBRACE) ? parse_block(p) : parse_stmt(p);
         if (accept(p, SN_TOK_ELSE)) {
             s->else_br = at(p, SN_TOK_LBRACE) ? parse_block(p) : parse_stmt(p);
@@ -932,11 +958,8 @@ static SnStmt *parse_stmt(P *p) {
     case SN_TOK_WHILE: {
         advance_p(p);
         SnStmt *s = new_stmt(p, SN_STMT_WHILE, span);
-        int paren = accept(p, SN_TOK_LPAREN);
+        /* Same reasoning as the `if` arm above. */
         s->expr = parse_expr(p);
-        if (paren) {
-            expect(p, SN_TOK_RPAREN);
-        }
         s->then_br = at(p, SN_TOK_LBRACE) ? parse_block(p) : parse_stmt(p);
         return s;
     }
@@ -950,7 +973,13 @@ static SnStmt *parse_stmt(P *p) {
         if (accept(p, SN_TOK_COLON)) {
             s->type = parse_type(p);
         }
-        expect(p, SN_TOK_IN);
+        /* `for v <~ ch` iterates a channel; `for v in xs` iterates a collection.
+         * Both are for-loops over a source, so they share SN_STMT_FOR — which of
+         * the two it is follows from the type of `s->expr`, and that is P2's
+         * call, not the parser's. */
+        if (!accept(p, SN_TOK_RECV_BIND)) {
+            expect(p, SN_TOK_IN);
+        }
         s->expr = parse_expr(p);
         if (paren) {
             expect(p, SN_TOK_RPAREN);
@@ -1029,6 +1058,36 @@ static SnStmt *parse_stmt(P *p) {
     }
     default:
         break;
+    }
+
+    /* Receive-bind: `x <~ expr`, `ok, value <~ ch.tryReceive()`. Declares
+     * mutable bindings with inferred types, and receives from a channel when the
+     * right-hand side is a Channel<T> — the two readings differ only by type, so
+     * the parser emits SN_STMT_VAR either way and leaves the choice to P2.
+     * Detected by scanning `name (, name)*` up to a `<~`, which keeps a plain
+     * expression statement starting with an identifier untouched. */
+    if (at_name(p)) {
+        size_t i = p->pos;
+        for (;;) {
+            if (!at_name_tok(p->toks->data[i].kind)) { i = 0; break; }
+            i++;
+            if (p->toks->data[i].kind == SN_TOK_COMMA) { i++; continue; }
+            break;
+        }
+        if (i != 0 && p->toks->data[i].kind == SN_TOK_RECV_BIND) {
+            SnStmt *s = new_stmt(p, SN_STMT_VAR, span);
+            s->name = expect_name(p);
+            while (accept(p, SN_TOK_COMMA)) {
+                const char *extra = expect_name(p);
+                if (extra) {
+                    sn_list_push(p->arena, &s->extra_names, (void *)(uintptr_t)extra);
+                }
+            }
+            expect(p, SN_TOK_RECV_BIND);
+            s->expr = parse_expr(p);
+            accept(p, SN_TOK_SEMI);
+            return s;
+        }
     }
 
     SnStmt *s = new_stmt(p, SN_STMT_EXPR, span);
@@ -1337,14 +1396,22 @@ static SnDecl *parse_decl(P *p, int in_type_body) {
         }
         if (accept(p, SN_TOK_COLON)) {
             for (;;) {
-                parse_type(p);
+                SnType *sup = parse_type(p);
+                if (sup) {
+                    sn_list_push(p->arena, &d->supertypes, sup);
+                }
                 if (accept(p, SN_TOK_COMMA)) {
                     continue;
                 }
                 break;
             }
         }
-        parse_type_body(p, d);
+        /* A bodyless type is an opaque native handle: `@native struct Scheduler`.
+         * Requiring `@native` on it is a semantic rule owned by P2, exactly as
+         * for a bodyless method — the grammar only records the absence. */
+        if (at(p, SN_TOK_LBRACE)) {
+            parse_type_body(p, d);
+        }
         return d;
 
     case SN_DECL_ENUM:
@@ -1408,6 +1475,19 @@ static SnDecl *parse_decl(P *p, int in_type_body) {
 }
 
 /* ── compilation unit ─────────────────────────────────────────────────────── */
+
+SnExpr *sn_parse_expr_only(SnArena *arena, SnDiagSink *diag,
+                           const SnTokenVec *toks) {
+    P p;
+    p.toks = toks;
+    p.pos = 0;
+    p.arena = arena;
+    p.diag = diag;
+    p.errors = 0;
+    p.panic = 0;
+    SnExpr *e = parse_expr(&p);
+    return p.errors ? NULL : e;
+}
 
 int sn_parse(SnArena *arena, SnDiagSink *diag, const SnTokenVec *toks,
              SnUnit *out) {

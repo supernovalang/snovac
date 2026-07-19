@@ -12,7 +12,7 @@ WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
 BUILD   ?= build
 BIN      = $(BUILD)/snovac
 
-SRCS = main.c lex.c parse.c diag.c arena.c
+SRCS = main.c lex.c parse.c eval.c diag.c arena.c
 OBJS = $(addprefix $(BUILD)/,$(SRCS:.c=.o))
 DEPS = $(OBJS:.o=.d)
 

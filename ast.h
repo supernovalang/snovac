@@ -87,7 +87,7 @@ struct SnExpr {
     SnList params;      /* LAMBDA: SnParam* */
     SnStmt *body;       /* LAMBDA with a block body */
     SnExpr *value;      /* LAMBDA with an expression body */
-    SnType *type;       /* CAST / IS */
+    SnType *type;       /* CAST / IS; LAMBDA: declared return type, if written */
     SnList arms;        /* MATCH: SnMatchArm* */
     uint8_t interpolated; /* STRING: contains at least one ${...} */
 };
@@ -146,6 +146,10 @@ struct SnStmt {
     SnList stmts;      /* BLOCK: SnStmt* */
     SnList arms;       /* MATCH: SnMatchArm* */
     SnList catches;    /* TRY: SnStmt* (each a BLOCK with name set) */
+    /* Extra names bound by a multi-target receive-bind, `a, b <~ expr`. The
+     * first name is in `name`; this holds the rest, so the single-target form
+     * leaves it empty and reads exactly like LET/VAR. */
+    SnList extra_names; /* VAR from `<~`: const char* */
 };
 
 /* ── declarations ─────────────────────────────────────────────────────────── */
@@ -196,6 +200,12 @@ struct SnDecl {
     SnStmt *body;        /* FUNC / METHOD body; NULL means @native */
     SnList members;      /* CLASS / STRUCT / INTERFACE: SnDecl* */
     SnList variants;     /* ENUM: SnDecl* of kind SN_DECL_VARIANT */
+    /* Supertypes written after `:` — base class and/or implemented interfaces,
+     * in source order. The parser does not distinguish the two: telling a class
+     * from an interface needs symbol resolution, which is P2's job. Empty for a
+     * type that declares none; the implicit `object` root is supplied by P2, not
+     * recorded here. */
+    SnList supertypes;   /* CLASS / STRUCT / INTERFACE: SnType* */
 };
 
 /* ── compilation unit ─────────────────────────────────────────────────────── */

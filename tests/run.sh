@@ -44,5 +44,15 @@ assert "interp: 5 strings total" 5 \
 assert "softkw: and is identifier" 1 \
   "$(toks softkw.snova | grep -c 'identifier *and$')"
 
+# End-to-end execution against the repository's own run-pass fixtures. These
+# assert real program output, not parser shape.
+RP="$DIR/../../tests/run-pass"
+for name in hello string_comment_url array_field_access counter; do
+  if [ -f "$RP/$name.snova" ] && [ -f "$RP/$name.stdout" ]; then
+    got="$("$SNOVAC" run "$RP/$name.snova" 2>&1 || true)"
+    assert "run: $name" "$(cat "$RP/$name.stdout")" "$got"
+  fi
+done
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

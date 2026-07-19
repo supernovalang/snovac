@@ -12,6 +12,7 @@
 #include "ast.h"
 #include "diag.h"
 #include "lex.h"
+#include "eval.h"
 #include "parse.h"
 
 #define SNOVAC_VERSION "0.0.1-p1"
@@ -52,7 +53,8 @@ static void usage(FILE *out) {
             "  snovac --emit=tokens <file.snova>   dump the token stream\n"
             "  snovac --check-lex   <file.snova>   lex only; exit non-zero on error\n"
             "  snovac --emit=ast    <file.snova>   dump the parse tree\n"
-            "  snovac --check-parse <file.snova>   lex+parse; exit non-zero on error\n",
+            "  snovac --check-parse <file.snova>   lex+parse; exit non-zero on error\n"
+            "  snovac run           <file.snova>   parse and execute\n",
             SNOVAC_VERSION);
 }
 
@@ -215,6 +217,41 @@ static int cmd_parse(const char *path, int dump) {
     return rc;
 }
 
+static int cmd_run(const char *path) {
+    size_t len = 0;
+    char *src = read_file(path, &len);
+    if (!src) {
+        fprintf(stderr, "error: cannot read '%s'\n", path);
+        return 2;
+    }
+
+    SnArena arena;
+    sn_arena_init(&arena, 1024 * 1024);
+
+    SnDiagSink diag;
+    sn_diag_init(&diag, path, src, len);
+
+    SnTokenVec toks;
+    sn_lex(&arena, &diag, src, len, &toks);
+
+    SnUnit unit;
+    sn_parse(&arena, &diag, &toks, &unit);
+
+    int rc;
+    if (diag.error_count > 0) {
+        fprintf(stderr, "%d error%s in %s\n", diag.error_count,
+                diag.error_count == 1 ? "" : "s", path);
+        rc = 1;
+    } else {
+        int code = sn_eval_run(&arena, &diag, &unit);
+        rc = (code < 0) ? 1 : code;
+    }
+
+    sn_arena_free(&arena);
+    free(src);
+    return rc;
+}
+
 static int cmd_lex(const char *path, int dump) {
     size_t len = 0;
     char *src = read_file(path, &len);
@@ -286,6 +323,13 @@ int main(int argc, char **argv) {
             return 2;
         }
         return cmd_lex(argv[2], 0);
+    }
+    if (strcmp(argv[1], "run") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "error: run needs a file\n");
+            return 2;
+        }
+        return cmd_run(argv[2]);
     }
     if (strcmp(argv[1], "--emit=ast") == 0) {
         if (argc < 3) {

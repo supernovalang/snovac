@@ -13,4 +13,10 @@
 int sn_parse(SnArena *arena, SnDiagSink *diag, const SnTokenVec *toks,
              SnUnit *out);
 
+/* Parses a single expression from an already-lexed stream. Used to evaluate the
+ * inside of a `${...}` interpolation with the real parser instead of an ad-hoc
+ * scanner. Returns NULL when the source is not a valid expression. */
+SnExpr *sn_parse_expr_only(SnArena *arena, SnDiagSink *diag,
+                           const SnTokenVec *toks);
+
 #endif /* SNOVAC_PARSE_H */

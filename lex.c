@@ -106,6 +106,7 @@ const char *sn_tok_name(SnTokKind k) {
     case SN_TOK_TILDE: return "~";
     case SN_TOK_ARROW: return "->";
     case SN_TOK_TILDE_ARROW: return "~>";
+    case SN_TOK_RECV_BIND: return "<~";
     case SN_TOK_FATARROW: return "=>";
     case SN_TOK_PLUS_EQ: return "+=";
     case SN_TOK_MINUS_EQ: return "-=";
@@ -546,6 +547,10 @@ int sn_lex(SnArena *arena, SnDiagSink *diag, const char *src, size_t len,
             /* No `<<`: Snovalang has no shift operators, and `<` is the generic
              * opener. Always one token. */
             if (n1 == '=') { advance(&L); emit(&L, SN_TOK_LE, start, sl, slb); }
+            /* `<~` is the receive-bind operator (docs/spec-pulsar-defer-selfhost.md
+             * §1). Unambiguous against the generic opener: no type starts with
+             * `~`, so `<` immediately followed by `~` is never `List<~T>`. */
+            else if (n1 == '~') { advance(&L); emit(&L, SN_TOK_RECV_BIND, start, sl, slb); }
             else { emit(&L, SN_TOK_LT, start, sl, slb); }
             continue;
         case '>':

@@ -76,6 +76,7 @@ typedef enum {
     SN_TOK_AMP, SN_TOK_PIPE, SN_TOK_CARET, SN_TOK_TILDE,
     SN_TOK_ARROW,       /* ->  lambda / return type */
     SN_TOK_TILDE_ARROW, /* ~>  pulsar stream return: `(T) ~> Channel<R>` */
+    SN_TOK_RECV_BIND,   /* <~  receive-bind: `x <~ ch`, `for v <~ ch` */
     SN_TOK_FATARROW,    /* =>  match arm */
     SN_TOK_PLUS_EQ, SN_TOK_MINUS_EQ, SN_TOK_STAR_EQ, SN_TOK_SLASH_EQ,
 
