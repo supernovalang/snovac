@@ -7,6 +7,7 @@
 
 CC      ?= cc
 CFLAGS  ?= -std=c11 -O2 -g
+CPPFLAGS ?=
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
            -Wmissing-prototypes -Wconversion -Wno-sign-conversion
 BUILD   ?= build
@@ -24,7 +25,7 @@ $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
 $(BUILD)/%.o: %.c | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<
 
 $(BUILD):
 	mkdir -p $(BUILD)

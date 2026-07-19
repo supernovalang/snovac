@@ -15,7 +15,9 @@
 #include "eval.h"
 #include "parse.h"
 
+#ifndef SNOVAC_VERSION
 #define SNOVAC_VERSION "0.0.1-p1"
+#endif
 
 static char *read_file(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
