@@ -1,0 +1,6 @@
+let a = 42
+let b = 42L
+let c = 1.5
+let d = 1e9
+let e = 0xFFFF
+let f = 1.toString()

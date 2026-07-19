@@ -1,0 +1,5 @@
+let a = "plain"
+let b = "hello ${name}"
+let c = "literal $$ dollar"
+let d = "nested ${map.get("k")}"
+let e = "$${notInterp}"
