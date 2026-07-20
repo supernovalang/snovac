@@ -98,6 +98,22 @@ static void print_params(const SnDecl *d) {
     printf(")");
 }
 
+/* `{ get set: (x) -> ... }` — the projection body is not re-printed, only the
+ * fact that one exists, since the dump is a shape check and not a formatter. */
+static void print_accessors(const SnDecl *d) {
+    if (!d->has_accessors) {
+        return;
+    }
+    printf(" {");
+    if (d->getter) {
+        printf(" get%s", d->getter->proj ? ": (...)" : "");
+    }
+    if (d->setter) {
+        printf(" set%s", d->setter->proj ? ": (...)" : "");
+    }
+    printf(" }");
+}
+
 static void print_decorators(const SnDecl *d) {
     if (!d->decorators.len) {
         return;
@@ -124,6 +140,7 @@ void sn_dump_decl(const SnDecl *d, int depth) {
         printf(": ");
         sn_dump_type(d->type);
     }
+    print_accessors(d);
     print_decorators(d);
 
     if ((d->kind == SN_DECL_METHOD || d->kind == SN_DECL_FUNC) && !d->body) {

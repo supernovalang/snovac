@@ -121,6 +121,70 @@ void parse_params(P *p, SnList *out) {
     expect(p, SN_TOK_RPAREN);
 }
 
+/* One accessor inside a property block: `get;` or `get: (x) -> "*******";`.
+ *
+ * The projection names the field locally. The name is arbitrary and scoped to
+ * the projection — a field called `password` may be spelled `x` — so nothing
+ * here checks it against the field name. */
+static SnAccessor *parse_accessor(P *p) {
+    SnAccessor *a = (SnAccessor *)sn_arena_calloc(p->arena, sizeof(SnAccessor));
+    a->span = cur(p)->span;
+    advance_p(p); /* `get` or `set` */
+    if (accept(p, SN_TOK_COLON)) {
+        expect(p, SN_TOK_LPAREN);
+        a->param = expect_name(p);
+        expect(p, SN_TOK_RPAREN);
+        expect(p, SN_TOK_ARROW);
+        /* The projection is a full expression in its own context: a struct
+         * literal or a match is legal there and must not inherit the field
+         * declaration's constraints. */
+        PCtx c = ctx_clear(p);
+        a->proj = parse_expr(p);
+        ctx_restore(p, c);
+    }
+    if (!accept(p, SN_TOK_SEMI)) {
+        accept(p, SN_TOK_COMMA);
+    }
+    return a;
+}
+
+/* `{ get; set; }` written after a field declaration.
+ *
+ * Absence is meaningful here, not a default: a block that omits `set` makes the
+ * field unassignable from outside the declaring type, and one that omits `get`
+ * makes it unreadable. That is why the accessors are stored as NULL-able
+ * pointers rather than flags with a default. Enforcing the rule is P2's job —
+ * the parser only records the shape.
+ *
+ * `get` and `set` are ordinary identifiers in this language (the corpus has
+ * `method get(): int`), so they are recognised by text and only in this
+ * position. */
+void parse_accessor_block(P *p, SnDecl *d) {
+    expect(p, SN_TOK_LBRACE);
+    d->has_accessors = 1u;
+    while (!at(p, SN_TOK_RBRACE) && !at_end_p(p)) {
+        int is_get = at(p, SN_TOK_IDENT) && strcmp(cur(p)->text, "get") == 0;
+        int is_set = at(p, SN_TOK_IDENT) && strcmp(cur(p)->text, "set") == 0;
+        if (!is_get && !is_set) {
+            error_at(p, cur(p), SNOVA_BAD_ACCESSOR,
+                     "expected `get` or `set` in a property block, found `%s`",
+                     sn_tok_name(kind(p)));
+            while (!at_end_p(p) && !at(p, SN_TOK_RBRACE)) {
+                advance_p(p);
+            }
+            break;
+        }
+        SnAccessor **slot = is_get ? &d->getter : &d->setter;
+        if (*slot) {
+            error_at(p, cur(p), SNOVA_BAD_ACCESSOR,
+                     "`%s` is declared twice in the same property block",
+                     is_get ? "get" : "set");
+        }
+        *slot = parse_accessor(p);
+    }
+    expect(p, SN_TOK_RBRACE);
+}
+
 void parse_type_body(P *p, SnDecl *d) {
     expect(p, SN_TOK_LBRACE);
     while (!at(p, SN_TOK_RBRACE) && !at_end_p(p)) {

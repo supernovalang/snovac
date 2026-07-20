@@ -27,6 +27,7 @@
 #define SNOVA_EXPECTED_DECL      102
 #define SNOVA_EXPECTED_EXPR      103
 #define SNOVA_EXPECTED_TYPE      104
+#define SNOVA_BAD_ACCESSOR       105
 
 typedef struct {
     const SnTokenVec *toks;
@@ -202,6 +203,7 @@ SnDecl *parse_decl(P *p, int in_type_body);
 void parse_decorators(P *p, SnList *out);
 void parse_generic_params(P *p, SnList *out);
 void parse_params(P *p, SnList *out);
+void parse_accessor_block(P *p, SnDecl *d);
 void parse_type_body(P *p, SnDecl *d);
 void parse_enum_body(P *p, SnDecl *d);
 

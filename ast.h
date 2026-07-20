@@ -183,6 +183,19 @@ struct SnParam {
     SnSpan span;
 };
 
+/* One accessor of a property block: `get;` / `get: (x) -> "*******";`.
+ *
+ * The bare form leaves `param` and `proj` NULL and means "expose the field
+ * itself". The projection form names the field locally — the name is arbitrary
+ * and scoped to the projection, so `password` may be spelled `x` — and yields
+ * the expression in its place. Which side of the boundary a projection applies
+ * to is semantics, owned by P2; the parser only records the shape. */
+typedef struct {
+    const char *param; /* projection parameter, NULL for the bare form */
+    SnExpr *proj;      /* projection body, NULL for the bare form */
+    SnSpan span;
+} SnAccessor;
+
 typedef enum {
     SN_DECL_CLASS, SN_DECL_STRUCT, SN_DECL_ENUM, SN_DECL_INTERFACE,
     SN_DECL_FUNC, SN_DECL_METHOD, SN_DECL_FIELD, SN_DECL_CONST,
@@ -207,6 +220,14 @@ struct SnDecl {
     SnType *ret;         /* FUNC / METHOD return type, may be NULL */
     SnType *type;        /* FIELD / CONST type, may be NULL */
     SnExpr *init;        /* FIELD / CONST initializer, may be NULL */
+    /* FIELD: property accessors. `has_accessors` distinguishes a field written
+     * with an empty block from one written with no block at all — a field with
+     * no block keeps the plain visibility rules, so the unannotated corpus is
+     * unaffected. `getter`/`setter` are NULL when that accessor is absent,
+     * which is what makes the field unreadable/unassignable from outside. */
+    uint8_t has_accessors;
+    SnAccessor *getter;
+    SnAccessor *setter;
     SnStmt *body;        /* FUNC / METHOD body; NULL means @native */
     SnList members;      /* CLASS / STRUCT / INTERFACE: SnDecl* */
     SnList variants;     /* ENUM: SnDecl* of kind SN_DECL_VARIANT */

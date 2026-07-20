@@ -99,6 +99,9 @@ static SnDecl *parse_bare_field(P *p, SnSpan span) {
     if (accept(p, SN_TOK_ASSIGN)) {
         f->init = parse_expr(p);
     }
+    if (at(p, SN_TOK_LBRACE)) {
+        parse_accessor_block(p, f);
+    }
     accept(p, SN_TOK_COMMA);
     accept(p, SN_TOK_SEMI);
     return f;
@@ -298,6 +301,13 @@ SnDecl *parse_decl(P *p, int in_type_body) {
         }
         if (accept(p, SN_TOK_ASSIGN)) {
             d->init = parse_expr(p);
+        }
+        /* `private let password: string { get; set; }` — a property block. Only
+         * a member can carry one, and only a field: at top level a `{` after a
+         * declaration is never part of it, so the check stays narrow rather
+         * than swallowing whatever follows. */
+        if (k == SN_DECL_FIELD && in_type_body && at(p, SN_TOK_LBRACE)) {
+            parse_accessor_block(p, d);
         }
         accept(p, SN_TOK_SEMI);
         return d;

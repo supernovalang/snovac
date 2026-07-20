@@ -44,6 +44,22 @@ assert "interp: 5 strings total" 5 \
 assert "softkw: and is identifier" 1 \
   "$(toks softkw.snova | grep -c 'identifier *and$')"
 
+# Property accessors: the absence of an accessor is the whole point of the
+# feature, so assert that omitted ones stay omitted and are not defaulted in.
+PROPS="$DIR/../../tests/compile-pass/property_accessors.snova"
+props() { "$SNOVAC" --emit=ast "$PROPS"; }
+assert "props: parses clean" 0 "$(props >/dev/null 2>&1; echo $?)"
+assert "props: read-only field has get and no set" 1 \
+  "$(props | grep -c 'private let id: string { get }')"
+assert "props: write-only field has set and no get" 1 \
+  "$(props | grep -c 'var token: string { set }')"
+assert "props: empty block is not both accessors" 1 \
+  "$(props | grep -c 'let salt: string { }')"
+assert "props: no block stays a plain field" 1 \
+  "$(props | grep -c 'let attempts: int$')"
+assert "props: projections recorded on both sides" 1 \
+  "$(props | grep -c 'var score: int { get: (\.\.\.) set: (\.\.\.) }')"
+
 # End-to-end execution against the repository's own run-pass fixtures. These
 # assert real program output, not parser shape.
 RP="$DIR/../../tests/run-pass"
