@@ -37,8 +37,9 @@ void sn_list_push(SnArena *a, SnList *l, void *item);
 /* ── types ────────────────────────────────────────────────────────────────── */
 
 typedef enum {
-    SN_TYPE_NAME, /* Foo, a.b.Foo, List<T>, Result<T, E> */
-    SN_TYPE_FUNC  /* (A, B) -> R */
+    SN_TYPE_NAME,  /* Foo, a.b.Foo, List<T>, Result<T, E> */
+    SN_TYPE_FUNC,  /* (A, B) -> R */
+    SN_TYPE_TUPLE  /* (K, V) — element types live in `params` */
 } SnTypeKind;
 
 struct SnType {
@@ -68,7 +69,9 @@ typedef enum {
     SN_EXPR_ARRAY,   /* [a, b, c]  */
     SN_EXPR_CAST,    /* e as T     */
     SN_EXPR_IS,      /* e is T     */
-    SN_EXPR_MATCH    /* match e { } used in expression position */
+    SN_EXPR_MATCH,   /* match e { } used in expression position */
+    SN_EXPR_IF,      /* if c { a } else { b } used in expression position */
+    SN_EXPR_STRUCT_LIT /* UserDto { id: "1" } — construction by field list */
 } SnExprKind;
 
 typedef struct SnParam SnParam;
@@ -89,6 +92,10 @@ struct SnExpr {
     SnExpr *value;      /* LAMBDA with an expression body */
     SnType *type;       /* CAST / IS; LAMBDA: declared return type, if written */
     SnList arms;        /* MATCH: SnMatchArm* */
+    /* IF: `lhs` is the condition, `body` the then-block, and the else side is
+     * either `else_body` (a block) or `rhs` (a chained else-if expression). */
+    SnStmt *else_body;
+    SnList field_names; /* STRUCT_LIT: const char* — values are in `args` */
     uint8_t interpolated; /* STRING: contains at least one ${...} */
 };
 
@@ -147,6 +154,7 @@ struct SnStmt {
     SnList stmts;      /* BLOCK: SnStmt* */
     SnList arms;       /* MATCH: SnMatchArm* */
     SnList catches;    /* TRY: SnStmt* (each a BLOCK with name set) */
+    SnStmt *finally_br; /* TRY: `finally { ... }` block, or NULL */
     /* Extra names bound by a multi-target receive-bind, `a, b <~ expr`. The
      * first name is in `name`; this holds the rest, so the single-target form
      * leaves it empty and reads exactly like LET/VAR. */
@@ -178,7 +186,8 @@ struct SnParam {
 typedef enum {
     SN_DECL_CLASS, SN_DECL_STRUCT, SN_DECL_ENUM, SN_DECL_INTERFACE,
     SN_DECL_FUNC, SN_DECL_METHOD, SN_DECL_FIELD, SN_DECL_CONST,
-    SN_DECL_VARIANT, SN_DECL_TYPEALIAS
+    SN_DECL_VARIANT, SN_DECL_TYPEALIAS,
+    SN_DECL_EXTENSION /* extension Counter { ... } — members in `members` */
 } SnDeclKind;
 
 struct SnDecl {

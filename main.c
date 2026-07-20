@@ -1,8 +1,8 @@
-/* main.c — snovac driver (P0/P1).
+/* main.c — snovac driver.
  *
- * Implemented today: --version, --emit=tokens, --check-lex.
- * Parser, resolver, type checker and backends land in later phases; see
- * specs/20260719/snovac-c-toolchain/plan.md.
+ * Implemented today: --version, --emit=tokens, --check-lex, --emit=ast,
+ * --check-parse, run. Resolver, type checker and backends land in later
+ * phases; see specs/20260719/snovac-c-toolchain/plan.md.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,8 +11,9 @@
 #include "arena.h"
 #include "ast.h"
 #include "diag.h"
-#include "lex.h"
+#include "dump.h"
 #include "eval.h"
+#include "lex.h"
 #include "parse.h"
 
 #ifndef SNOVAC_VERSION
@@ -60,117 +61,56 @@ static void usage(FILE *out) {
             SNOVAC_VERSION);
 }
 
-static const char *vis_name(SnVisibility v) {
-    switch (v) {
-    case SN_VIS_PUBLIC: return "public ";
-    case SN_VIS_PRIVATE: return "private ";
-    case SN_VIS_PROTECTED: return "protected ";
-    default: return "";
+static void report_errors(const SnDiagSink *diag, const char *path) {
+    if (diag->error_count > 0) {
+        fprintf(stderr, "%d error%s in %s\n", diag->error_count,
+                diag->error_count == 1 ? "" : "s", path);
     }
 }
 
-static void print_type(const SnType *t) {
-    if (!t) {
-        printf("?");
-        return;
-    }
-    if (t->kind == SN_TYPE_FUNC) {
-        printf("(");
-        for (size_t i = 0; i < t->params.len; i++) {
-            if (i) printf(", ");
-            print_type((const SnType *)t->params.items[i]);
+static void dump_tokens(const SnTokenVec *toks) {
+    for (size_t i = 0; i < toks->len; i++) {
+        const SnToken *t = &toks->data[i];
+        printf("%4u:%-3u %-16s", t->span.line, t->span.col,
+               sn_tok_name(t->kind));
+        if (t->kind == SN_TOK_IDENT || t->kind == SN_TOK_INT ||
+            t->kind == SN_TOK_LONG || t->kind == SN_TOK_DOUBLE ||
+            t->kind == SN_TOK_DECIMAL || t->kind == SN_TOK_STRING ||
+            t->kind == SN_TOK_CHAR) {
+            printf(" %s", t->text);
+            if (t->kind == SN_TOK_STRING && t->has_interpolation) {
+                printf("   [interpolated]");
+            }
         }
-        printf(") -> ");
-        print_type(t->ret);
-        return;
-    }
-    printf("%s", t->name ? t->name : "?");
-    if (t->args.len) {
-        printf("<");
-        for (size_t i = 0; i < t->args.len; i++) {
-            if (i) printf(", ");
-            print_type((const SnType *)t->args.items[i]);
-        }
-        printf(">");
+        printf("\n");
     }
 }
 
-static void indent(int n) {
-    for (int i = 0; i < n; i++) {
-        printf("  ");
-    }
-}
-
-static void print_decl(const SnDecl *d, int depth);
-
-static void print_members(const SnList *l, int depth) {
-    for (size_t i = 0; i < l->len; i++) {
-        print_decl((const SnDecl *)l->items[i], depth);
-    }
-}
-
-static void print_decl(const SnDecl *d, int depth) {
-    indent(depth);
-    switch (d->kind) {
-    case SN_DECL_CLASS:     printf("%sclass %s", vis_name(d->vis), d->name); break;
-    case SN_DECL_STRUCT:    printf("%sstruct %s", vis_name(d->vis), d->name); break;
-    case SN_DECL_ENUM:      printf("%senum %s", vis_name(d->vis), d->name); break;
-    case SN_DECL_INTERFACE: printf("%sinterface %s", vis_name(d->vis), d->name); break;
-    case SN_DECL_METHOD:
-    case SN_DECL_FUNC:
-        printf("%s%s%s%s %s", vis_name(d->vis), d->is_static ? "static " : "",
-               d->is_async ? "async " : "",
-               d->kind == SN_DECL_METHOD ? "method" : "func", d->name);
-        break;
-    case SN_DECL_FIELD:   printf("%s%s %s", vis_name(d->vis), d->is_mutable ? "var" : "let", d->name); break;
-    case SN_DECL_CONST:   printf("%sconst %s", vis_name(d->vis), d->name); break;
-    case SN_DECL_VARIANT: printf("variant %s", d->name); break;
-    case SN_DECL_TYPEALIAS: printf("%stype %s", vis_name(d->vis), d->name); break;
+static int cmd_lex(const char *path, int dump) {
+    size_t len = 0;
+    char *src = read_file(path, &len);
+    if (!src) {
+        fprintf(stderr, "error: cannot read '%s'\n", path);
+        return 2;
     }
 
-    if (d->generics.len) {
-        printf("<");
-        for (size_t i = 0; i < d->generics.len; i++) {
-            if (i) printf(", ");
-            printf("%s", (const char *)d->generics.items[i]);
-        }
-        printf(">");
-    }
-    if (d->kind == SN_DECL_METHOD || d->kind == SN_DECL_FUNC ||
-        d->kind == SN_DECL_VARIANT) {
-        printf("(");
-        for (size_t i = 0; i < d->params.len; i++) {
-            const SnParam *pm = (const SnParam *)d->params.items[i];
-            if (i) printf(", ");
-            printf("%s: ", pm->name);
-            print_type(pm->type);
-            if (pm->def) printf(" = ...");
-        }
-        printf(")");
-    }
-    if (d->ret) {
-        printf(": ");
-        print_type(d->ret);
-    }
-    if (d->type) {
-        printf(": ");
-        print_type(d->type);
-    }
-    if (d->decorators.len) {
-        printf("   [");
-        for (size_t i = 0; i < d->decorators.len; i++) {
-            if (i) printf(" ");
-            printf("@%s", ((const SnDecorator *)d->decorators.items[i])->name);
-        }
-        printf("]");
-    }
-    if ((d->kind == SN_DECL_METHOD || d->kind == SN_DECL_FUNC) && !d->body) {
-        printf("   (no body — expects @native)");
-    }
-    printf("\n");
+    SnArena arena;
+    sn_arena_init(&arena, 256 * 1024);
 
-    print_members(&d->variants, depth + 1);
-    print_members(&d->members, depth + 1);
+    SnDiagSink diag;
+    sn_diag_init(&diag, path, src, len);
+
+    SnTokenVec toks;
+    int rc = sn_lex(&arena, &diag, src, len, &toks);
+
+    if (dump) {
+        dump_tokens(&toks);
+    }
+    report_errors(&diag, path);
+
+    sn_arena_free(&arena);
+    free(src);
+    return rc ? 1 : 0;
 }
 
 static int cmd_parse(const char *path, int dump) {
@@ -194,26 +134,11 @@ static int cmd_parse(const char *path, int dump) {
     sn_parse(&arena, &diag, &toks, &unit);
 
     if (dump) {
-        if (unit.package) {
-            printf("package %s\n", unit.package);
-        }
-        for (size_t i = 0; i < unit.imports.len; i++) {
-            printf("import %s\n", (const char *)unit.imports.items[i]);
-        }
-        if (unit.imports.len || unit.package) {
-            printf("\n");
-        }
-        for (size_t i = 0; i < unit.decls.len; i++) {
-            print_decl((const SnDecl *)unit.decls.items[i], 0);
-        }
+        sn_dump_unit(&unit);
     }
+    report_errors(&diag, path);
 
     int rc = diag.error_count > 0;
-    if (diag.error_count > 0) {
-        fprintf(stderr, "%d error%s in %s\n", diag.error_count,
-                diag.error_count == 1 ? "" : "s", path);
-    }
-
     sn_arena_free(&arena);
     free(src);
     return rc;
@@ -241,8 +166,7 @@ static int cmd_run(const char *path) {
 
     int rc;
     if (diag.error_count > 0) {
-        fprintf(stderr, "%d error%s in %s\n", diag.error_count,
-                diag.error_count == 1 ? "" : "s", path);
+        report_errors(&diag, path);
         rc = 1;
     } else {
         int code = sn_eval_run(&arena, &diag, &unit);
@@ -254,50 +178,25 @@ static int cmd_run(const char *path) {
     return rc;
 }
 
-static int cmd_lex(const char *path, int dump) {
-    size_t len = 0;
-    char *src = read_file(path, &len);
-    if (!src) {
-        fprintf(stderr, "error: cannot read '%s'\n", path);
-        return 2;
-    }
+/* A command that takes exactly one file argument. */
+typedef struct {
+    const char *flag;
+    int (*run)(const char *path, int dump);
+    int dump;
+} FileCommand;
 
-    SnArena arena;
-    sn_arena_init(&arena, 256 * 1024);
-
-    SnDiagSink diag;
-    sn_diag_init(&diag, path, src, len);
-
-    SnTokenVec toks;
-    int rc = sn_lex(&arena, &diag, src, len, &toks);
-
-    if (dump) {
-        for (size_t i = 0; i < toks.len; i++) {
-            const SnToken *t = &toks.data[i];
-            printf("%4u:%-3u %-16s", t->span.line, t->span.col,
-                   sn_tok_name(t->kind));
-            if (t->kind == SN_TOK_IDENT || t->kind == SN_TOK_INT ||
-                t->kind == SN_TOK_LONG || t->kind == SN_TOK_DOUBLE ||
-                t->kind == SN_TOK_DECIMAL || t->kind == SN_TOK_STRING ||
-                t->kind == SN_TOK_CHAR) {
-                printf(" %s", t->text);
-                if (t->kind == SN_TOK_STRING && t->has_interpolation) {
-                    printf("   [interpolated]");
-                }
-            }
-            printf("\n");
-        }
-    }
-
-    if (diag.error_count > 0) {
-        fprintf(stderr, "%d error%s in %s\n", diag.error_count,
-                diag.error_count == 1 ? "" : "s", path);
-    }
-
-    sn_arena_free(&arena);
-    free(src);
-    return rc ? 1 : 0;
+static int cmd_run_adapter(const char *path, int dump) {
+    (void)dump;
+    return cmd_run(path);
 }
+
+static const FileCommand FILE_COMMANDS[] = {
+    {"--emit=tokens", cmd_lex,           1},
+    {"--check-lex",   cmd_lex,           0},
+    {"--emit=ast",    cmd_parse,         1},
+    {"--check-parse", cmd_parse,         0},
+    {"run",           cmd_run_adapter,   0},
+};
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -312,40 +211,18 @@ int main(int argc, char **argv) {
         usage(stdout);
         return 0;
     }
-    if (strcmp(argv[1], "--emit=tokens") == 0) {
+
+    for (size_t i = 0; i < sizeof(FILE_COMMANDS) / sizeof(FILE_COMMANDS[0]);
+         i++) {
+        const FileCommand *c = &FILE_COMMANDS[i];
+        if (strcmp(argv[1], c->flag) != 0) {
+            continue;
+        }
         if (argc < 3) {
-            fprintf(stderr, "error: --emit=tokens needs a file\n");
+            fprintf(stderr, "error: %s needs a file\n", c->flag);
             return 2;
         }
-        return cmd_lex(argv[2], 1);
-    }
-    if (strcmp(argv[1], "--check-lex") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "error: --check-lex needs a file\n");
-            return 2;
-        }
-        return cmd_lex(argv[2], 0);
-    }
-    if (strcmp(argv[1], "run") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "error: run needs a file\n");
-            return 2;
-        }
-        return cmd_run(argv[2]);
-    }
-    if (strcmp(argv[1], "--emit=ast") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "error: --emit=ast needs a file\n");
-            return 2;
-        }
-        return cmd_parse(argv[2], 1);
-    }
-    if (strcmp(argv[1], "--check-parse") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "error: --check-parse needs a file\n");
-            return 2;
-        }
-        return cmd_parse(argv[2], 0);
+        return c->run(argv[2], c->dump);
     }
 
     fprintf(stderr, "error: unknown option '%s'\n", argv[1]);
