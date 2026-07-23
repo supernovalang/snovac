@@ -34,6 +34,89 @@ static Flow exec_while(Interp *in, Env *env, const SnStmt *s) {
     return FLOW_NORMAL;
 }
 
+/* Bare variant name of a possibly qualified pattern path: `Option.Some` and
+ * `Some` both match a variant constructed as `Some`. */
+static const char *pattern_variant_name(const char *path) {
+    const char *dot = strrchr(path, '.');
+    return dot ? dot + 1 : path;
+}
+
+int pattern_match_bind(Interp *in, Env *env, const SnPattern *pat,
+                       Value subject) {
+    switch (pat->kind) {
+    case SN_PAT_WILDCARD:
+        return 1;
+    case SN_PAT_BINDING:
+        env_define(in, env, pat->name, subject);
+        return 1;
+    case SN_PAT_LITERAL: {
+        Value lit = eval_expr(in, env, pat->literal);
+        return !in->failed && value_equals(lit, subject);
+    }
+    case SN_PAT_VARIANT: {
+        if (subject.kind != V_VARIANT) {
+            return 0;
+        }
+        if (strcmp(pattern_variant_name(pat->name), subject.as.vt->name) != 0) {
+            return 0;
+        }
+        if (pat->subs.len > subject.as.vt->payload.len) {
+            return 0;
+        }
+        for (size_t i = 0; i < pat->subs.len; i++) {
+            const Value *payload = (const Value *)subject.as.vt->payload.items[i];
+            if (!pattern_match_bind(in, env, (const SnPattern *)pat->subs.items[i],
+                                    *payload)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    }
+    return 0;
+}
+
+const SnMatchArm *match_select_arm(Interp *in, Env *env, const SnList *arms,
+                                   Value subject, Env **arm_env) {
+    for (size_t i = 0; i < arms->len && !in->failed; i++) {
+        const SnMatchArm *arm = (const SnMatchArm *)arms->items[i];
+        Env *candidate = env_new(in, env);
+        if (!pattern_match_bind(in, candidate, arm->pattern, subject)) {
+            continue;
+        }
+        if (arm->guard &&
+            !truthy(in, eval_expr(in, candidate, arm->guard), arm->span)) {
+            continue;
+        }
+        *arm_env = candidate;
+        return arm;
+    }
+    *arm_env = NULL;
+    return NULL;
+}
+
+static Flow exec_match(Interp *in, Env *env, const SnStmt *s) {
+    Value subject = eval_expr(in, env, s->expr);
+    if (in->failed) {
+        return FLOW_RETURN;
+    }
+    Env *arm_env = NULL;
+    const SnMatchArm *arm = match_select_arm(in, env, &s->arms, subject, &arm_env);
+    if (!arm) {
+        /* A statement-position match with no matching arm is a no-op, mirroring
+         * an `if` chain whose conditions are all false. */
+        return in->failed ? FLOW_RETURN : FLOW_NORMAL;
+    }
+    if (arm->body) {
+        return exec_stmt(in, arm_env, arm->body);
+    }
+    if (arm->value) {
+        eval_expr(in, arm_env, arm->value);
+        return in->failed ? FLOW_RETURN : FLOW_NORMAL;
+    }
+    return FLOW_NORMAL;
+}
+
 Flow exec_stmt(Interp *in, Env *env, const SnStmt *s) {
     if (!s || in->failed) {
         return in->failed ? FLOW_RETURN : FLOW_NORMAL;
@@ -65,6 +148,9 @@ Flow exec_stmt(Interp *in, Env *env, const SnStmt *s) {
 
     case SN_STMT_WHILE:
         return exec_while(in, env, s);
+
+    case SN_STMT_MATCH:
+        return exec_match(in, env, s);
 
     case SN_STMT_BREAK:    return FLOW_BREAK;
     case SN_STMT_CONTINUE: return FLOW_CONTINUE;

@@ -90,8 +90,66 @@ const char *to_string(Interp *in, Value v, SnSpan span) {
         return arena_sprintf(in, "<%s>",
                              v.as.o->cls->name ? v.as.o->cls->name : "object");
     }
+    case V_VARIANT: {
+        if (v.as.vt->payload.len == 0) {
+            return v.as.vt->name;
+        }
+        const char *out = arena_sprintf(in, "%s(", v.as.vt->name);
+        for (size_t i = 0; i < v.as.vt->payload.len; i++) {
+            const Value *p = (const Value *)v.as.vt->payload.items[i];
+            out = str_concat(in, out, to_string(in, *p, span));
+            if (i + 1 < v.as.vt->payload.len) {
+                out = str_concat(in, out, ", ");
+            }
+        }
+        return str_concat(in, out, ")");
+    }
+    case V_LAMBDA:
+        return "<lambda>";
     }
     return "?";
+}
+
+/* ── variants and equality ────────────────────────────────────────────────── */
+
+Value v_variant(Interp *in, const char *name, SnList payload) {
+    VariantVal *vt = (VariantVal *)sn_arena_calloc(in->arena, sizeof(VariantVal));
+    vt->name = name;
+    vt->payload = payload;
+    Value v;
+    v.kind = V_VARIANT;
+    v.as.vt = vt;
+    return v;
+}
+
+int value_equals(Value a, Value b) {
+    if (a.kind == V_INT && b.kind == V_INT) return a.as.i == b.as.i;
+    if (a.kind == V_BOOL && b.kind == V_BOOL) return a.as.b == b.as.b;
+    if (a.kind == V_DOUBLE && b.kind == V_DOUBLE) return a.as.d == b.as.d;
+    if ((a.kind == V_INT && b.kind == V_DOUBLE) ||
+        (a.kind == V_DOUBLE && b.kind == V_INT)) {
+        double x = (a.kind == V_DOUBLE) ? a.as.d : (double)a.as.i;
+        double y = (b.kind == V_DOUBLE) ? b.as.d : (double)b.as.i;
+        return x == y;
+    }
+    if (a.kind == V_STRING && b.kind == V_STRING) {
+        return strcmp(a.as.s, b.as.s) == 0;
+    }
+    if (a.kind == V_UNIT && b.kind == V_UNIT) return 1;
+    if (a.kind == V_VARIANT && b.kind == V_VARIANT) {
+        if (strcmp(a.as.vt->name, b.as.vt->name) != 0 ||
+            a.as.vt->payload.len != b.as.vt->payload.len) {
+            return 0;
+        }
+        for (size_t i = 0; i < a.as.vt->payload.len; i++) {
+            if (!value_equals(*(const Value *)a.as.vt->payload.items[i],
+                              *(const Value *)b.as.vt->payload.items[i])) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    return 0;
 }
 
 /* ── declaration lookup ───────────────────────────────────────────────────── */
@@ -230,6 +288,37 @@ Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
 Value call_method(Interp *in, Object *self, const SnDecl *m, SnList *args,
                   Env *caller, SnSpan span) {
     return call_function(in, m, args, caller, self, span);
+}
+
+Value call_lambda(Interp *in, const LambdaVal *lam, SnList *args, Env *caller,
+                  SnSpan span) {
+    (void)span;
+    Env *local = env_new(in, lam->env); /* lambdas close over their env */
+    for (size_t i = 0; i < lam->expr->params.len; i++) {
+        const SnParam *p = (const SnParam *)lam->expr->params.items[i];
+        Value v;
+        if (args && i < args->len) {
+            v = eval_expr(in, caller, (const SnExpr *)args->items[i]);
+        } else if (p->def) {
+            v = eval_expr(in, caller, p->def);
+        } else {
+            v = default_for(p->type);
+        }
+        env_define(in, local, p->name, v);
+    }
+    if (lam->expr->value) {
+        return eval_expr(in, local, lam->expr->value);
+    }
+    if (lam->expr->body) {
+        Value saved = in->ret;
+        in->ret = v_unit();
+        Flow f = exec_stmt(in, local, lam->expr->body);
+        Value r = (f == FLOW_RETURN) ? in->ret : v_unit();
+        in->ret = saved;
+        in->flow = FLOW_NORMAL;
+        return r;
+    }
+    return v_unit();
 }
 
 /* ── entry point ──────────────────────────────────────────────────────────── */

@@ -142,6 +142,178 @@ static int try_intrinsic(Interp *in, Env *env, const SnExpr *call, Value *out) {
     return 1;
 }
 
+/* Builds a variant value from a constructor call's evaluated arguments. */
+static Value make_variant_from_args(Interp *in, Env *env, const char *name,
+                                    const SnList *args) {
+    SnList payload = {0};
+    for (size_t i = 0; i < args->len; i++) {
+        Value v = eval_expr(in, env, (const SnExpr *)args->items[i]);
+        Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
+        *slot = v;
+        sn_list_push(in->arena, &payload, slot);
+    }
+    return v_variant(in, name, payload);
+}
+
+/* `Some` / `Ok` / `Err` are built-in variant constructors; any other
+ * capitalized name is looked up among declared enums' variants so user enums
+ * construct the same way. */
+static int is_variant_constructor(Interp *in, const char *name) {
+    if (strcmp(name, "Some") == 0 || strcmp(name, "Ok") == 0 ||
+        strcmp(name, "Err") == 0 || strcmp(name, "None") == 0) {
+        return 1;
+    }
+    for (size_t i = 0; i < in->unit->decls.len; i++) {
+        const SnDecl *d = (const SnDecl *)in->unit->decls.items[i];
+        if (d->kind != SN_DECL_ENUM) {
+            continue;
+        }
+        for (size_t j = 0; j < d->variants.len; j++) {
+            const SnDecl *v = (const SnDecl *)d->variants.items[j];
+            if (v->name && strcmp(v->name, name) == 0) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* Calls a single-parameter lambda with an already-evaluated value. */
+static Value call_lambda_with_value(Interp *in, const LambdaVal *lam,
+                                    Value arg, SnSpan span) {
+    (void)span;
+    Env *local = env_new(in, lam->env);
+    if (lam->expr->params.len > 0) {
+        const SnParam *p = (const SnParam *)lam->expr->params.items[0];
+        env_define(in, local, p->name, arg);
+    }
+    if (lam->expr->value) {
+        return eval_expr(in, local, lam->expr->value);
+    }
+    if (lam->expr->body) {
+        Value saved = in->ret;
+        in->ret = v_unit();
+        Flow f = exec_stmt(in, local, lam->expr->body);
+        Value r = (f == FLOW_RETURN) ? in->ret : v_unit();
+        in->ret = saved;
+        in->flow = FLOW_NORMAL;
+        return r;
+    }
+    return v_unit();
+}
+
+/* Option/Result (and general variant) instance methods: the functional
+ * unwrapping surface — `isSome`, `unwrap`, `unwrapOr`, `unwrapOrElse`,
+ * `unwrapTo`, `unwrapIf`, `map`. Returns 1 when handled. */
+static int try_variant_method(Interp *in, Env *env, Value recv,
+                              const SnExpr *call, Value *out) {
+    const SnExpr *callee = call->lhs;
+    const char *m = callee->text;
+    const VariantVal *vt = recv.as.vt;
+    int has_payload = vt->payload.len > 0;
+    int is_ok_like = strcmp(vt->name, "Some") == 0 || strcmp(vt->name, "Ok") == 0;
+    Value payload = has_payload ? *(const Value *)vt->payload.items[0] : v_unit();
+
+    if (strcmp(m, "isSome") == 0) { *out = v_bool(strcmp(vt->name, "Some") == 0); return 1; }
+    if (strcmp(m, "isNone") == 0) { *out = v_bool(strcmp(vt->name, "None") == 0); return 1; }
+    if (strcmp(m, "isOk") == 0)   { *out = v_bool(strcmp(vt->name, "Ok") == 0); return 1; }
+    if (strcmp(m, "isErr") == 0)  { *out = v_bool(strcmp(vt->name, "Err") == 0); return 1; }
+
+    if (strcmp(m, "unwrap") == 0) {
+        if (!is_ok_like) {
+            rt_error(in, SNOVA_TYPE_ERROR, call->span,
+                     "called `unwrap` on `%s`", vt->name);
+            *out = v_unit();
+            return 1;
+        }
+        *out = payload;
+        return 1;
+    }
+    if (strcmp(m, "unwrapOr") == 0) {
+        if (is_ok_like) {
+            *out = payload;
+        } else if (call->args.len > 0) {
+            *out = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+        } else {
+            *out = v_unit();
+        }
+        return 1;
+    }
+    if (strcmp(m, "unwrapOrElse") == 0) {
+        if (is_ok_like) {
+            *out = payload;
+            return 1;
+        }
+        if (call->args.len > 0) {
+            Value fn = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            if (fn.kind == V_LAMBDA) {
+                SnList no_args = {0};
+                *out = call_lambda(in, fn.as.lam, &no_args, env, call->span);
+                return 1;
+            }
+            *out = fn;
+            return 1;
+        }
+        *out = v_unit();
+        return 1;
+    }
+    if (strcmp(m, "unwrapTo") == 0) {
+        /* `.unwrapTo(Type)` — unwrap asserting the payload's declared type.
+         * The argument is a bare type name, so it is validated against the
+         * payload instead of being evaluated as an expression. */
+        if (!is_ok_like) {
+            rt_error(in, SNOVA_TYPE_ERROR, call->span,
+                     "called `unwrapTo` on `%s`", vt->name);
+            *out = v_unit();
+            return 1;
+        }
+        if (call->args.len > 0) {
+            const SnExpr *arg = (const SnExpr *)call->args.items[0];
+            if (arg->kind == SN_EXPR_IDENT && arg->text &&
+                payload.kind == V_OBJECT && payload.as.o->cls->name &&
+                strcmp(payload.as.o->cls->name, arg->text) != 0) {
+                rt_error(in, SNOVA_TYPE_ERROR, call->span,
+                         "`unwrapTo(%s)` does not match payload of type `%s`",
+                         arg->text, payload.as.o->cls->name);
+                *out = v_unit();
+                return 1;
+            }
+        }
+        *out = payload;
+        return 1;
+    }
+    if (strcmp(m, "unwrapIf") == 0) {
+        /* `.unwrapIf((entry) -> { ... })` — run the lambda with the payload
+         * when present; the original value is returned so calls chain. */
+        if (is_ok_like && call->args.len > 0) {
+            Value fn = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            if (fn.kind == V_LAMBDA) {
+                (void)call_lambda_with_value(in, fn.as.lam, payload, call->span);
+            }
+        }
+        *out = recv;
+        return 1;
+    }
+    if (strcmp(m, "map") == 0) {
+        if (is_ok_like && call->args.len > 0) {
+            Value fn = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            if (fn.kind == V_LAMBDA) {
+                Value mapped =
+                    call_lambda_with_value(in, fn.as.lam, payload, call->span);
+                SnList payload_list = {0};
+                Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
+                *slot = mapped;
+                sn_list_push(in->arena, &payload_list, slot);
+                *out = v_variant(in, vt->name, payload_list);
+                return 1;
+            }
+        }
+        *out = recv;
+        return 1;
+    }
+    return 0;
+}
+
 static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
     Value out;
     if (try_intrinsic(in, env, e, &out)) {
@@ -155,8 +327,14 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
         return v_unit();
     }
 
-    /* Bare name: a top-level function, or a constructor `Counter()`. */
+    /* Bare name: a local lambda value, a top-level function, a constructor
+     * `Counter()`, or a variant constructor `Some(x)` / `Ok(v)`. */
     if (callee->kind == SN_EXPR_IDENT && callee->text) {
+        Value *local = env_lookup(env, callee->text);
+        if (local && local->kind == V_LAMBDA) {
+            return call_lambda(in, local->as.lam, (SnList *)&e->args, env,
+                               e->span);
+        }
         const SnDecl *fn = find_top(in, callee->text, SN_DECL_FUNC);
         if (fn) {
             return call_function(in, fn, (SnList *)&e->args, env, NULL, e->span);
@@ -168,6 +346,9 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
             v.as.o = instantiate(in, cls, (SnList *)&e->args, env, e->span);
             return v;
         }
+        if (is_variant_constructor(in, callee->text)) {
+            return make_variant_from_args(in, env, callee->text, &e->args);
+        }
         rt_error(in, SNOVA_UNDEFINED_NAME, e->span, "unknown function `%s`",
                  callee->text);
         return v_unit();
@@ -176,10 +357,21 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
     /* Method call on a receiver. */
     if (callee->kind == SN_EXPR_MEMBER && callee->lhs) {
         Value recv = eval_expr(in, env, callee->lhs);
+        if (recv.kind == V_VARIANT && callee->text &&
+            try_variant_method(in, env, recv, e, &out)) {
+            return out;
+        }
         if (recv.kind == V_OBJECT) {
             const SnDecl *m = find_member(recv.as.o->cls, callee->text);
             if (m) {
                 return call_method(in, recv.as.o, m, (SnList *)&e->args, env,
+                                   e->span);
+            }
+            /* A field that holds a lambda value is callable through the
+             * member: `handler.onHit(entry)`. */
+            Value *f = object_field(recv.as.o, callee->text);
+            if (f && f->kind == V_LAMBDA) {
+                return call_lambda(in, f->as.lam, (SnList *)&e->args, env,
                                    e->span);
             }
         }
@@ -276,6 +468,12 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
         if (v) {
             return *v;
         }
+        /* Payload-less variants read as bare identifiers: `None`, or a
+         * user enum's empty variant. */
+        if (e->text && is_variant_constructor(in, e->text)) {
+            SnList empty = {0};
+            return v_variant(in, e->text, empty);
+        }
         rt_error(in, SNOVA_UNDEFINED_NAME, e->span, "undefined name `%s`",
                  e->text);
         return v_unit();
@@ -299,6 +497,83 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
         return eval_binary(in, env, e);
     case SN_EXPR_ASSIGN:
         return eval_assign(in, env, e);
+    case SN_EXPR_LAMBDA: {
+        LambdaVal *lam = (LambdaVal *)sn_arena_calloc(in->arena,
+                                                      sizeof(LambdaVal));
+        lam->expr = e;
+        lam->env = env;
+        Value v;
+        v.kind = V_LAMBDA;
+        v.as.lam = lam;
+        return v;
+    }
+    case SN_EXPR_AWAIT:
+        /* The smoke-path interpreter is synchronous: `await e` is `e`. */
+        return eval_expr(in, env, e->lhs);
+    case SN_EXPR_STRUCT_LIT: {
+        if (!e->lhs || e->lhs->kind != SN_EXPR_IDENT || !e->lhs->text) {
+            rt_error(in, SNOVA_UNSUPPORTED, e->span,
+                     "struct literal target is not a plain type name");
+            return v_unit();
+        }
+        const SnDecl *cls = find_type(in, e->lhs->text);
+        if (!cls) {
+            rt_error(in, SNOVA_UNDEFINED_NAME, e->span, "unknown type `%s`",
+                     e->lhs->text);
+            return v_unit();
+        }
+        Object *o = (Object *)sn_arena_calloc(in->arena, sizeof(Object));
+        o->cls = cls;
+        for (size_t i = 0; i < cls->members.len; i++) {
+            const SnDecl *m = (const SnDecl *)cls->members.items[i];
+            if (m->kind != SN_DECL_FIELD) {
+                continue;
+            }
+            Value v = m->init ? eval_expr(in, env, m->init)
+                              : default_for(m->type);
+            for (size_t j = 0; j < e->field_names.len; j++) {
+                const char *fname = (const char *)e->field_names.items[j];
+                if (m->name && strcmp(fname, m->name) == 0) {
+                    v = eval_expr(in, env, (const SnExpr *)e->args.items[j]);
+                    break;
+                }
+            }
+            Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
+            *slot = v;
+            sn_list_push(in->arena, &o->names, (void *)m->name);
+            sn_list_push(in->arena, &o->slots, slot);
+        }
+        Value v;
+        v.kind = V_OBJECT;
+        v.as.o = o;
+        return v;
+    }
+    case SN_EXPR_MATCH: {
+        Value subject = eval_expr(in, env, e->lhs);
+        if (in->failed) {
+            return v_unit();
+        }
+        Env *arm_env = NULL;
+        const SnMatchArm *arm =
+            match_select_arm(in, env, &e->arms, subject, &arm_env);
+        if (!arm) {
+            rt_error(in, SNOVA_TYPE_ERROR, e->span,
+                     "no match arm matched value `%s`",
+                     to_string(in, subject, e->span));
+            return v_unit();
+        }
+        if (arm->value) {
+            return eval_expr(in, arm_env, arm->value);
+        }
+        if (arm->body) {
+            /* Block-bodied arm in expression position: run it for effect; a
+             * `return` inside is delivered as the surrounding function's
+             * return value by the caller's exec loop. */
+            Flow f = exec_stmt(in, arm_env, arm->body);
+            (void)f;
+        }
+        return v_unit();
+    }
     default:
         rt_error(in, SNOVA_UNSUPPORTED, e->span,
                  "this expression form is not executable yet");

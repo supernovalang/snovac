@@ -29,10 +29,12 @@
 #define SNOVA_UNSUPPORTED        305
 
 typedef enum {
-    V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_OBJECT
+    V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_OBJECT, V_VARIANT, V_LAMBDA
 } ValKind;
 
 typedef struct Object Object;
+typedef struct VariantVal VariantVal;
+typedef struct LambdaVal LambdaVal;
 
 typedef struct {
     ValKind kind;
@@ -42,6 +44,8 @@ typedef struct {
         int b;
         const char *s;
         Object *o;
+        VariantVal *vt;
+        LambdaVal *lam;
     } as;
 } Value;
 
@@ -51,6 +55,14 @@ struct Object {
     SnList slots;  /* Value* */
 };
 
+/* A constructed enum variant — `Some(x)`, `Ok(v)`, `Err(e)`, `None`, or a
+ * variant of a user-declared enum. `name` is the bare variant name; `payload`
+ * holds the constructor arguments in order (Value*). */
+struct VariantVal {
+    const char *name;
+    SnList payload; /* Value* */
+};
+
 typedef enum { FLOW_NORMAL, FLOW_RETURN, FLOW_BREAK, FLOW_CONTINUE } Flow;
 
 typedef struct Env {
@@ -58,6 +70,13 @@ typedef struct Env {
     SnList names; /* const char* */
     SnList slots; /* Value* — boxed so assignment is visible to inner scopes */
 } Env;
+
+/* A first-class `(x) -> ...` value: the lambda expression plus the environment
+ * it closed over. */
+struct LambdaVal {
+    const SnExpr *expr; /* SN_EXPR_LAMBDA node (params, value/body) */
+    Env *env;           /* captured lexical environment */
+};
 
 typedef struct {
     SnArena *arena;
@@ -101,6 +120,23 @@ Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
                     Object *self, SnSpan span);
 Value call_method(Interp *in, Object *self, const SnDecl *m, SnList *args,
                   Env *caller, SnSpan span);
+
+/* ── variants, lambdas and pattern matching ───────────────────────────────── */
+
+Value v_variant(Interp *in, const char *name, SnList payload);
+Value call_lambda(Interp *in, const LambdaVal *lam, SnList *args, Env *caller,
+                  SnSpan span);
+int value_equals(Value a, Value b);
+/* Attempts to match `subject` against `pat`; bindings are defined in `env`.
+ * Returns 1 on match. Bindings from a failed partial match may remain in
+ * `env` — callers pass a fresh child env per arm. */
+int pattern_match_bind(Interp *in, Env *env, const SnPattern *pat,
+                       Value subject);
+/* Shared match driver: finds the first matching arm (patterns + guard) and
+ * returns it, with `*arm_env` set to the env holding its bindings. NULL when
+ * no arm matches. */
+const SnMatchArm *match_select_arm(Interp *in, Env *env, const SnList *arms,
+                                   Value subject, Env **arm_env);
 
 /* ── eval_expr.c ──────────────────────────────────────────────────────────── */
 
