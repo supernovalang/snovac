@@ -21,13 +21,19 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Parser band: 0100-0199 */
-#define SNOVA_EXPECTED_TOKEN     100
-#define SNOVA_EXPECTED_NAME      101
+/* Parser band: 0100-0199. 100 and 101 are deliberately skipped here: they are
+ * already the project-wide codes for "untyped variable" and "declared/inferred
+ * type mismatch" (compiler/src/typeck, builtin/Errors.snova, the Rust Stage 0,
+ * and several specs all agree on this), owned by the P2 type checker, not the
+ * parser. Found 2026-07-25 while reserving P2's diagnostic range — nothing
+ * pinned these two parser codes to 100/101 by value, so moving them here is
+ * free; do not reuse 100/101 for anything in snovac/. */
 #define SNOVA_EXPECTED_DECL      102
 #define SNOVA_EXPECTED_EXPR      103
 #define SNOVA_EXPECTED_TYPE      104
 #define SNOVA_BAD_ACCESSOR       105
+#define SNOVA_EXPECTED_TOKEN     106
+#define SNOVA_EXPECTED_NAME      107
 
 typedef struct {
     const SnTokenVec *toks;

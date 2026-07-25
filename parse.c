@@ -6,19 +6,6 @@
  */
 #include "parse_internal.h"
 
-void sn_list_push(SnArena *a, SnList *l, void *item) {
-    if (l->len == l->cap) {
-        size_t ncap = l->cap ? l->cap * 2 : 4;
-        void **nd = (void **)sn_arena_alloc(a, ncap * sizeof(void *));
-        if (l->items) {
-            memcpy(nd, l->items, l->len * sizeof(void *));
-        }
-        l->items = nd;
-        l->cap = ncap;
-    }
-    l->items[l->len++] = item;
-}
-
 static void parser_init(P *p, SnArena *arena, SnDiagSink *diag,
                         const SnTokenVec *toks) {
     p->toks = toks;

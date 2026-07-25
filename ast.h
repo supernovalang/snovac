@@ -22,6 +22,13 @@ typedef struct SnExpr SnExpr;
 typedef struct SnStmt SnStmt;
 typedef struct SnDecl SnDecl;
 
+/* Forward-declared only (never defined here) so check.c (P2.5) can cache a
+ * resolved SnTypeRep* directly on the AST node — plan.md's G2 requires every
+ * SnExpr to carry a resolved type after check.c runs. types.h can't be
+ * #included here: types.h -> symbol.h -> ast.h would be circular. A pointer
+ * field needs no more than this forward declaration. */
+typedef struct SnTypeRep SnTypeRep;
+
 /* ── list ─────────────────────────────────────────────────────────────────── */
 
 typedef struct {
@@ -97,6 +104,12 @@ struct SnExpr {
     SnStmt *else_body;
     SnList field_names; /* STRUCT_LIT: const char* — values are in `args` */
     uint8_t interpolated; /* STRING: contains at least one ${...} */
+
+    /* Set by check.c (P2.5), NULL before it runs. plan.md G2: every SnExpr
+     * gets a resolved type; SN_T_ERROR (never NULL) marks a node whose type
+     * couldn't be determined, so a NULL check here only ever means "check.c
+     * hasn't reached this node yet," never "this expression has no type." */
+    SnTypeRep *resolved_type;
 };
 
 /* ── patterns ─────────────────────────────────────────────────────────────── */

@@ -356,6 +356,28 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
 
     /* Method call on a receiver. */
     if (callee->kind == SN_EXPR_MEMBER && callee->lhs) {
+        /* Static method: `Foo.bar()` where Foo is a declared type, not a
+         * local binding. This must be checked before evaluating `callee->lhs`
+         * as a value expression below: a bare type name is not itself an
+         * executable value, so eval_expr would raise "undefined name" for
+         * any static call before this function ever got a chance to
+         * recognize it as one. */
+        if (callee->lhs->kind == SN_EXPR_IDENT && callee->lhs->text &&
+            !env_lookup(env, callee->lhs->text)) {
+            const SnDecl *cls = find_type(in, callee->lhs->text);
+            if (cls) {
+                const SnDecl *m = find_member(cls, callee->text);
+                if (m) {
+                    return call_function(in, m, (SnList *)&e->args, env, NULL,
+                                         e->span);
+                }
+                rt_error(in, SNOVA_UNDEFINED_NAME, e->span,
+                         "unknown method `%s`",
+                         callee->text ? callee->text : "?");
+                return v_unit();
+            }
+        }
+
         Value recv = eval_expr(in, env, callee->lhs);
         if (recv.kind == V_VARIANT && callee->text &&
             try_variant_method(in, env, recv, e, &out)) {
@@ -373,15 +395,6 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
             if (f && f->kind == V_LAMBDA) {
                 return call_lambda(in, f->as.lam, (SnList *)&e->args, env,
                                    e->span);
-            }
-        }
-        /* Static method: `Foo.bar()` where Foo is a declared type. */
-        if (callee->lhs->kind == SN_EXPR_IDENT && callee->lhs->text) {
-            const SnDecl *cls = find_type(in, callee->lhs->text);
-            const SnDecl *m = find_member(cls, callee->text);
-            if (m) {
-                return call_function(in, m, (SnList *)&e->args, env, NULL,
-                                     e->span);
             }
         }
         rt_error(in, SNOVA_UNDEFINED_NAME, e->span, "unknown method `%s`",
