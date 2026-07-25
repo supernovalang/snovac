@@ -750,6 +750,16 @@ static void check_constructor_call(SnChecker *c, SnExpr *call_expr, SnSymbol *ty
 SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     SnTypeRep *result;
 
+    /* A recovered parse leaves holes: `a +` produces an SN_EXPR_BINARY whose
+     * rhs never materialised, and the parser has already reported why. Those
+     * nodes still reach here whenever anything type-checks a unit that did
+     * not parse cleanly, so every operand slot is nullable by contract, not
+     * by accident. Answering `error` keeps the walk going without inventing a
+     * second diagnostic for a hole the parser already owns. */
+    if (!e) {
+        return sn_type_error(c->types);
+    }
+
     switch (e->kind) {
     case SN_EXPR_INT:
         result = sn_type_int(c->types);

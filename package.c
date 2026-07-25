@@ -327,6 +327,65 @@ size_t sn_pkggraph_scan_root(SnPackageGraph *g, const char *root) {
  * pacote só"), so same-package imports never become edges at all — the loop
  * below skips them before they reach the graph. */
 
+/* Resolves one import target to the package that provides it.
+ *
+ * An import names either a package outright or a SYMBOL inside one, and the
+ * corpus uses both spellings against the same graph: `builtin.console.Console`
+ * is a whole package (builtin/Console.snova declares exactly that), while
+ * `builtin.auth.Auth.OAuth2` and `stdlib.sonar.serialization.Json` name a
+ * symbol inside packages `builtin.auth.Auth` and `stdlib.sonar.serialization`.
+ * Nothing in the syntax distinguishes the two, so resolution is longest-match:
+ * try the whole dotted name, then drop trailing segments until a declared
+ * package matches. Returns NULL only when no prefix is a package at all.
+ *
+ * Getting this wrong is not cosmetic — the symbol spelling is the common one
+ * in real projects, and treating it as a missing package made SNOVA0050 fire
+ * on correct code. */
+static SnPackageNode *resolve_import_target(SnPackageGraph *g, const char *target) {
+    SnPackageNode *exact = sn_pkggraph_find(g, target);
+    if (exact) {
+        return exact;
+    }
+
+    char prefix[SN_PKG_PATH_MAX];
+    size_t n = strlen(target);
+    if (n >= sizeof(prefix)) {
+        return NULL;
+    }
+    memcpy(prefix, target, n + 1u);
+
+    for (;;) {
+        char *dot = strrchr(prefix, '.');
+        if (!dot) {
+            return NULL;
+        }
+        *dot = '\0';
+        SnPackageNode *node = sn_pkggraph_find(g, sn_intern_cstr(g->intern, prefix));
+        if (node) {
+            return node;
+        }
+    }
+}
+
+/* Namespaces whose packages may legitimately have no `.snova` file anywhere
+ * snovac can see.
+ *
+ * `builtin.*` and `stdlib.*` are supplied by the toolchain through paths this
+ * module never scans: a package registry compiled into the Rust frontend, the
+ * `.snovalang/deps` tree materialised by `snova deps`, or a registry cache.
+ * `builtin.http.Http` is the standing example — no file under `builtin/`
+ * declares it, yet importing it is correct. Claiming those are missing is a
+ * false statement about code that builds, so absence there is simply not
+ * evidence. Every other namespace IS the project's own, where an import
+ * naming no discovered package is a genuine, detectable error.
+ *
+ * Deciding these positively (rather than declining to judge) is native
+ * package resolution — P2.3, still undesigned; see the header comment in
+ * package.h. */
+static int package_is_toolchain_provided(const char *name) {
+    return strncmp(name, "builtin.", 8) == 0 || strncmp(name, "stdlib.", 7) == 0;
+}
+
 void sn_pkggraph_link(SnPackageGraph *g) {
     for (SnPackageNode *node = g->nodes; node; node = node->next) {
         for (SnPackageFile *pf = node->files; pf; pf = pf->next) {
@@ -340,23 +399,32 @@ void sn_pkggraph_link(SnPackageGraph *g) {
                     continue;
                 }
 
-                SnPackageNode *tnode = sn_pkggraph_find(g, target);
+                SnPackageNode *tnode = resolve_import_target(g, target);
                 if (!tnode) {
+                    if (package_is_toolchain_provided(target)) {
+                        continue;
+                    }
                     SnSpan *sp = SN_LIST_AT(pf->import_spans, SnSpan, i);
                     sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_IMPORT_NOT_FOUND,
                                  *sp, "package `%s` was not found", target);
                     continue;
                 }
+                /* A symbol import that resolves back to this same package is
+                 * still not an edge — the exact-name check above only catches
+                 * the whole-package spelling. */
+                if (tnode->name == node->name) {
+                    continue;
+                }
 
                 int already = 0;
                 for (size_t j = 0; j < node->edges.len; j++) {
-                    if (SN_LIST_AT(node->edges, const char, j) == target) {
+                    if (SN_LIST_AT(node->edges, const char, j) == tnode->name) {
                         already = 1;
                         break;
                     }
                 }
                 if (!already) {
-                    sn_list_push(g->arena, &node->edges, (void *)target);
+                    sn_list_push(g->arena, &node->edges, (void *)tnode->name);
                 }
             }
             sn_diag_set_file(g->diag, outer);

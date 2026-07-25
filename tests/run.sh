@@ -22,6 +22,13 @@ assert() { # name, expected-count, actual-count
 
 toks() { "$SNOVAC" --emit=tokens "$DIR/lex/$1"; }
 
+# Echoes a command's exit status without tripping `set -e`, which is inherited
+# by command substitution and would otherwise abort the subshell at the
+# failing command, before the status could be printed.
+rc_of() {
+  if "$@" >/dev/null 2>&1; then echo 0; else echo $?; fi
+}
+
 # `Task<Result<unit, DataError>>` must close as two separate `>` tokens.
 # Snovalang has no shift operators; every `>>` in the corpus is a generic close.
 assert "generics: no >> token" 2 "$(toks generics.snova | grep -c '^ *[0-9]*:[0-9]* *> *$')"
@@ -69,6 +76,104 @@ for name in hello string_comment_url array_field_access counter; do
     assert "run: $name" "$(cat "$RP/$name.stdout")" "$got"
   fi
 done
+
+# Project-wide analysis: the regression that motivated it was a syntax error
+# in a NON-entry file passing every gate and the program running anyway,
+# because only the entry file was ever looked at. These assert that the whole
+# project is analysed, and that a clean one still passes.
+PROJ="$(mktemp -d)"
+trap 'rm -rf "$PROJ"' EXIT INT TERM
+mkdir -p "$PROJ/src/app"
+cat > "$PROJ/src/app/Main.snova" <<'EOF'
+package app
+
+import app.Models
+
+func main(): int {
+    return 0
+}
+EOF
+cat > "$PROJ/src/app/Models.snova" <<'EOF'
+package app
+
+public struct Config {
+    public let name: string
+}
+EOF
+
+assert "project: clean project passes" 0 \
+  "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
+
+# The entry file itself stays valid; only the sibling module is broken.
+cat > "$PROJ/src/app/Models.snova" <<'EOF'
+package app
+
+public struct Config
+    public let name: string
+}
+EOF
+
+assert "project: sibling syntax error is caught" 1 \
+  "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
+assert "project: single-file mode still cannot see it" 0 \
+  "$(rc_of "$SNOVAC" --check-parse "$PROJ/src/app/Main.snova")"
+assert "project: error names the sibling, not the entry file" 1 \
+  "$("$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova" 2>&1 | grep -c 'Models.snova:5')"
+
+# `import a.b.C` names a SYMBOL in package `a.b` as often as it names a whole
+# package; treating the symbol spelling as a missing package made SNOVA0050
+# fire on correct code across an entire project.
+mkdir -p "$PROJ/src/lib"
+cat > "$PROJ/src/lib/Util.snova" <<'EOF'
+package app.lib
+
+public struct Helper {
+    public let id: int
+}
+EOF
+cat > "$PROJ/src/app/Models.snova" <<'EOF'
+package app
+
+import app.lib.Helper
+
+public struct Config {
+    public let name: string
+}
+EOF
+
+assert "project: symbol import resolves to its package" 0 \
+  "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
+
+# No prefix of this names a declared package, and it is not under a
+# toolchain-provided namespace, so it stays a reported error.
+cat > "$PROJ/src/app/Models.snova" <<'EOF'
+package app
+
+import nowhere.at.All
+
+public struct Config {
+    public let name: string
+}
+EOF
+
+assert "project: genuinely missing import still reported" 1 \
+  "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
+
+# `builtin.*` / `stdlib.*` may be supplied by the toolchain with no `.snova`
+# file anywhere snovac can see (builtin.http.Http is the standing example), so
+# absence there must not be reported as a missing package.
+cat > "$PROJ/src/app/Models.snova" <<'EOF'
+package app
+
+import builtin.http.Http.HttpServer
+
+public struct Config {
+    public let name: string
+}
+EOF
+
+assert "project: toolchain-provided namespace is not judged" 0 \
+  "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
