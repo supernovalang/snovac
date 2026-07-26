@@ -123,37 +123,9 @@ static SnDecl *parse_constructor(P *p, SnSpan span) {
     return c;
 }
 
-/* `extension Counter { func isZero(): bool = value == 0 }` — adds members to
- * an existing type. Top level only, recognised by text. */
-static SnDecl *parse_extension(P *p, SnSpan span) {
-    advance_p(p);
-    SnDecl *x = new_decl(p, SN_DECL_EXTENSION, span);
-    x->name = expect_name(p);
-    if (at(p, SN_TOK_LT)) {
-        parse_generic_params(p, &x->generics);
-    }
-    parse_type_body(p, x);
-    return x;
-}
-
-/* `public type RowDecoder<T> = func(SqlRow) -> Result<T, E>`. `type` is not a
- * lexer keyword — it is a common identifier — so it is recognised by text plus
- * the shape that follows. */
-static SnDecl *parse_type_alias(P *p, SnSpan span) {
-    advance_p(p);
-    SnDecl *ta = new_decl(p, SN_DECL_TYPEALIAS, span);
-    ta->name = expect_name(p);
-    if (at(p, SN_TOK_LT)) {
-        parse_generic_params(p, &ta->generics);
-    }
-    expect(p, SN_TOK_ASSIGN);
-    ta->type = parse_type(p);
-    accept(p, SN_TOK_SEMI);
-    return ta;
-}
-
-static void parse_routine_rest(P *p, SnDecl *d) {
-    d->name = expect_name(p);
+/* Signature and body shared by every routine-shaped declaration once its name
+ * is already known: `(params)[: T | -> T] ( { block } | = expr )`. */
+static void parse_routine_signature_and_body(P *p, SnDecl *d) {
     if (at(p, SN_TOK_LT)) {
         parse_generic_params(p, &d->generics);
     }
@@ -185,6 +157,55 @@ static void parse_routine_rest(P *p, SnDecl *d) {
      * semantic rule checked in P2, not a syntax error here. */
 }
 
+/* `extension Counter { func isZero(): bool = value == 0 }` — adds members to
+ * an existing type. Top level only, recognised by text.
+ *
+ * `extension Counter.isZero(): bool = value == 0` is Kotlin/C#-style sugar
+ * for the same thing with exactly one member: `member_vis` (the modifiers
+ * written before `extension`) belongs to that member, not to the wrapper
+ * SN_DECL_EXTENSION node, so `public extension Counter.isZero()` makes
+ * `isZero` public the same way `public func isZero()` would inside the
+ * block form. */
+static SnDecl *parse_extension(P *p, SnSpan span, SnVisibility member_vis) {
+    advance_p(p);
+    SnDecl *x = new_decl(p, SN_DECL_EXTENSION, span);
+    x->name = expect_name(p);
+    if (at(p, SN_TOK_LT)) {
+        parse_generic_params(p, &x->generics);
+    }
+    if (accept(p, SN_TOK_DOT)) {
+        SnDecl *m = new_decl(p, SN_DECL_FUNC, span);
+        m->vis = member_vis;
+        m->name = expect_name(p);
+        parse_routine_signature_and_body(p, m);
+        sn_list_push(p->arena, &x->members, m);
+        return x;
+    }
+    parse_type_body(p, x);
+    return x;
+}
+
+/* `public type RowDecoder<T> = func(SqlRow) -> Result<T, E>`. `type` is not a
+ * lexer keyword — it is a common identifier — so it is recognised by text plus
+ * the shape that follows. */
+static SnDecl *parse_type_alias(P *p, SnSpan span) {
+    advance_p(p);
+    SnDecl *ta = new_decl(p, SN_DECL_TYPEALIAS, span);
+    ta->name = expect_name(p);
+    if (at(p, SN_TOK_LT)) {
+        parse_generic_params(p, &ta->generics);
+    }
+    expect(p, SN_TOK_ASSIGN);
+    ta->type = parse_type(p);
+    accept(p, SN_TOK_SEMI);
+    return ta;
+}
+
+static void parse_routine_rest(P *p, SnDecl *d) {
+    d->name = expect_name(p);
+    parse_routine_signature_and_body(p, d);
+}
+
 static int decl_kind_of(SnTokKind k, SnDeclKind *out) {
     switch (k) {
     case SN_TOK_CLASS:     *out = SN_DECL_CLASS;     return 1;
@@ -200,7 +221,8 @@ static int decl_kind_of(SnTokKind k, SnDeclKind *out) {
     }
 }
 
-static SnDecl *parse_by_text_decl(P *p, int in_type_body, SnSpan span) {
+static SnDecl *parse_by_text_decl(P *p, int in_type_body, SnSpan span,
+                                   SnVisibility vis) {
     if (in_type_body && at_name(p) && peek_at(p, 1)->kind == SN_TOK_COLON &&
         !at(p, SN_TOK_METHOD) && !at(p, SN_TOK_FUNC)) {
         return parse_bare_field(p, span);
@@ -215,7 +237,7 @@ static SnDecl *parse_by_text_decl(P *p, int in_type_body, SnSpan span) {
     }
     if (!in_type_body && strcmp(w, "extension") == 0 &&
         at_name_tok(peek_at(p, 1)->kind)) {
-        return parse_extension(p, span);
+        return parse_extension(p, span, vis);
     }
     if (strcmp(w, "type") == 0 && at_name_tok(peek_at(p, 1)->kind)) {
         return parse_type_alias(p, span);
@@ -230,7 +252,7 @@ SnDecl *parse_decl(P *p, int in_type_body) {
     SnSpan span = cur(p)->span;
     Modifiers mods = parse_modifiers(p);
 
-    SnDecl *by_text = parse_by_text_decl(p, in_type_body, span);
+    SnDecl *by_text = parse_by_text_decl(p, in_type_body, span, mods.vis);
     if (by_text) {
         by_text->decorators = decorators;
         by_text->vis = mods.vis;

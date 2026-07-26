@@ -188,6 +188,26 @@ const SnDecl *find_type(const Interp *in, const char *name) {
     return NULL;
 }
 
+void sn_eval_merge_extensions(SnArena *arena, SnUnit *unit) {
+    for (size_t i = 0; i < unit->decls.len; i++) {
+        SnDecl *ext = (SnDecl *)unit->decls.items[i];
+        if (ext->kind != SN_DECL_EXTENSION || !ext->name) {
+            continue;
+        }
+        for (size_t j = 0; j < unit->decls.len; j++) {
+            SnDecl *target = (SnDecl *)unit->decls.items[j];
+            if ((target->kind != SN_DECL_CLASS && target->kind != SN_DECL_STRUCT) ||
+                !target->name || strcmp(target->name, ext->name) != 0) {
+                continue;
+            }
+            for (size_t k = 0; k < ext->members.len; k++) {
+                sn_list_push(arena, &target->members, ext->members.items[k]);
+            }
+            break;
+        }
+    }
+}
+
 /* ── objects ──────────────────────────────────────────────────────────────── */
 
 Value default_for(const SnType *t) {

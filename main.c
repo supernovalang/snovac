@@ -658,6 +658,7 @@ static int cmd_run(const char *path) {
         report_errors(&diag, path);
         rc = 1;
     } else {
+        sn_eval_merge_extensions(&arena, &unit);
         int code = sn_eval_run(&arena, &diag, &unit);
         rc = (code < 0) ? 1 : code;
     }

@@ -25,4 +25,19 @@
  * negative value when the program could not be run at all. */
 int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit);
 
+/* Merges every top-level `extension Type { ... }` / `extension Type.method()`
+ * block in `unit` into the member list of the class/struct it targets, so
+ * `find_member` (dispatch for `recv.method()`) sees extension methods the
+ * same way it sees native ones. Single-file only, by design: `snovac run`
+ * has no project graph, unlike resolve.c's package-scoped equivalent
+ * (`collect_extension_members`). Call once, before `sn_eval_run`, while
+ * `unit` is still mutable. Class/struct only — unlike the resolver, which
+ * merges into any `SN_SYM_TYPE` (enum and interface included, via
+ * `decl_kind_has_member_scope`); this evaluator's tree-walk object model
+ * doesn't represent enum/interface instances yet, so there is nothing to
+ * merge into for them. The parity with the resolver is specifically about a
+ * missing target: when the extended type isn't found in the same file, it
+ * is left unmerged here exactly as resolve.c silently skips it there. */
+void sn_eval_merge_extensions(SnArena *arena, SnUnit *unit);
+
 #endif /* SNOVAC_EVAL_H */
