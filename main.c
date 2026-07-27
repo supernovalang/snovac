@@ -316,17 +316,43 @@ static SnDiagFile begin_symbol_file(SnDiagSink *diag, const SnSymbol *sym) {
     return sn_diag_set_file(diag, *sym->origin);
 }
 
+/* Restricts check_all_bodies() to symbols declared under `own_prefix` (a
+ * plain path prefix — the target file for `check <file>`, the project's
+ * source_root for `check --project`). NULL/"" disables the restriction.
+ *
+ * Why: the package graph pulls in builtin/ (and, for --project, vendored
+ * deps) purely so imports like `Console`/`Option` resolve by name — not
+ * because the file being checked asked for builtin/'s own implementation to
+ * be re-verified. Without this, `snovac check` on a trivial file reports
+ * dozens of unrelated pre-existing errors from builtin/'s own half-finished
+ * bodies, which is not what the user ran `check` to see (and
+ * is a stdlib/L3 concern to fix, not something a compiler run should block
+ * on). Bodies with no origin (sym->origin == NULL) are treated as "own" —
+ * that only happens for symbols this checker itself introduces, never for
+ * files pulled in from another root. */
+typedef struct {
+    const char *own_prefix;
+} SnBodyCheckScope;
+
+static int path_is_own(const SnBodyCheckScope *scope, const char *path) {
+    if (!scope || !scope->own_prefix || !scope->own_prefix[0]) return 1;
+    if (!path) return 1;
+    return strncmp(path, scope->own_prefix, strlen(scope->own_prefix)) == 0;
+}
+
 /* Checks every FUNC/METHOD body reachable from `resolver`'s collected
- * packages and type member scopes. */
+ * packages and type member scopes, except those excluded by `scope`
+ * (pass NULL to check everything). */
 static void check_all_bodies(SnChecker *c, SnResolver *resolver, SnPackageGraph *graph,
-                             SnArena *arena) {
+                             SnArena *arena, const SnBodyCheckScope *scope) {
     for (SnPackageScopeEntry *pe = resolver->packages; pe; pe = pe->next) {
         SnPackageNode *node = sn_pkggraph_find(graph, pe->package_name);
         SnList imports = node ? aggregate_imports(arena, node) : (SnList){0};
         for (size_t i = 0; i < pe->scope->nbuckets; i++) {
             for (SnSymbol *sym = pe->scope->buckets[i]; sym; sym = sym->next) {
                 if ((sym->kind == SN_SYM_FUNC || sym->kind == SN_SYM_METHOD) &&
-                    sym->decl->body) {
+                    sym->decl->body &&
+                    path_is_own(scope, sym->origin ? sym->origin->path : NULL)) {
                     c->current_package = pe->package_name;
                     c->current_imports = &imports;
                     c->enclosing_type = NULL;
@@ -353,7 +379,8 @@ static void check_all_bodies(SnChecker *c, SnResolver *resolver, SnPackageGraph 
         SnList imports = node ? aggregate_imports(arena, node) : (SnList){0};
         for (size_t bi = 0; bi < te->member_scope->nbuckets; bi++) {
             for (SnSymbol *sym = te->member_scope->buckets[bi]; sym; sym = sym->next) {
-                if (sym->kind == SN_SYM_METHOD && sym->decl->body) {
+                if (sym->kind == SN_SYM_METHOD && sym->decl->body &&
+                    path_is_own(scope, sym->origin ? sym->origin->path : NULL)) {
                     c->current_package = owner_pkg;
                     c->current_imports = &imports;
                     c->enclosing_type = te->type_decl;
@@ -383,8 +410,19 @@ static int cmd_check(const char *path, int dump) {
     sn_pkggraph_init(&graph, &arena, &intern, &diag);
     sn_pkggraph_scan_single_file(&graph, path);
 
+    /* find_builtin_root_for_project(), not the bare find_builtin_root(): the
+     * latter only walks up from `dir` and gives up, so a file checked from
+     * outside this repo (any mktemp'd scratch dir, e.g. every fixture in
+     * tests/conformance/) never finds `builtin/` — every `import
+     * builtin.*` then silently resolves to nothing (find_builtin_root's own
+     * comment: "not finding one just means the prelude stays empty"), which
+     * looks like an unrelated `SNOVA0023: not defined in this scope` at the
+     * use site instead of a missing-builtin diagnostic. The project-aware
+     * fallback chain (SNOVA_BUILTIN_DIR env var, then binary-relative via
+     * g_exe_dir) already existed for `check --project`; single-file `check`
+     * had no reason to be narrower. */
     char builtin_dir[1024];
-    if (find_builtin_root(dir, builtin_dir, sizeof(builtin_dir))) {
+    if (find_builtin_root_for_project(dir, builtin_dir, sizeof(builtin_dir))) {
         sn_pkggraph_scan_root(&graph, builtin_dir);
     }
     sn_pkggraph_link(&graph);
@@ -398,7 +436,8 @@ static int cmd_check(const char *path, int dump) {
 
     SnChecker checker;
     sn_checker_init(&checker, &arena, &intern, &diag, &resolver, &types);
-    check_all_bodies(&checker, &resolver, &graph, &arena);
+    SnBodyCheckScope scope = { .own_prefix = path };
+    check_all_bodies(&checker, &resolver, &graph, &arena, &scope);
 
     report_errors(&diag, path);
     int rc = diag.error_count > 0;
@@ -488,7 +527,8 @@ static int cmd_check_project(const char *path, int typecheck_bodies) {
     if (typecheck_bodies && diag.error_count == 0) {
         SnChecker checker;
         sn_checker_init(&checker, &arena, &intern, &diag, &resolver, &types);
-        check_all_bodies(&checker, &resolver, &graph, &arena);
+        SnBodyCheckScope scope = { .own_prefix = proj.source_root };
+        check_all_bodies(&checker, &resolver, &graph, &arena, &scope);
     }
 
     if (diag.error_count > 0) {

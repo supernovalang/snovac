@@ -226,6 +226,8 @@ struct SnDecl {
     uint8_t is_static;
     uint8_t is_override;
     uint8_t is_async;
+    uint8_t is_abstract; /* CLASS/STRUCT/INTERFACE declared `abstract` */
+    uint8_t is_pulsar;   /* FUNC/METHOD declared `pulsar func`/`pulsar method` */
     uint8_t is_mutable; /* FIELD declared with `var` */
 
     SnList decorators;   /* SnDecorator* */

@@ -95,6 +95,14 @@
 #define SNOVA_PRIVATE_ACCESS 143
 #define SNOVA_GENERIC_ARITY_MISMATCH 144
 
+/* Canonical codes, not new: already documented in docs/snovalang-diagnostics.md
+ * and implemented in crates/snovalang/src/native/selfcheck/pulsar.rs
+ * (Stage 0's text-scanner mirror of the same rules) — snovac had never
+ * implemented its own AST-based version of either check. */
+#define SNOVA_PULSAR_INVALID_RETURN 122
+#define SNOVA_PULSAR_DIRECT_CALL 124
+#define SNOVA_AWAIT_OUTSIDE_ASYNC 13
+
 #define SNOVA_OPTIONAL_TYPE_REQUIRED    200
 #define SNOVA_REDUNDANT_NULL_COALESCING 201
 #define SNOVA_MISMATCHED_FALLBACK       202
@@ -135,6 +143,17 @@ typedef struct {
      * immutable everywhere else, but the constructor is where it receives its
      * value (`this.description = description`) — see is_mutable_symbol. */
     int in_constructor;
+
+    /* Set for the whole body of an `async func`/`async method` — SNOVA013
+     * needs it to reject `await` anywhere else. */
+    int in_async_body;
+
+    /* Set only around checking the expr operand of a `pulsar work()`
+     * statement (SN_STMT_PULSAR) — the one place a pulsar function may be
+     * called directly. Consumed (read then cleared) the moment the CALL
+     * expression's callee is resolved, so it never leaks into that call's
+     * own arguments or into unrelated nested calls. */
+    int in_pulsar_launch;
 
     /* Nesting depth of `while`/`for` bodies being checked — 0 outside any
      * loop. `break`/`continue` are only legal at depth > 0. */

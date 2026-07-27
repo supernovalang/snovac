@@ -20,7 +20,18 @@ SnStmt *parse_block(P *p) {
             p->panic = 0;
         }
     }
-    expect(p, SN_TOK_RBRACE);
+    /* The while loop above only exits at `}` or end of file (its own
+     * condition, and the panic-resync loop inside it, both stop there) — so
+     * reaching EOF here specifically means the `{` opened above never found
+     * its match. That is SNOVA008 ("unclosed `{` delimiter",
+     * docs/snovalang-diagnostics.md), not the generic SNOVA_EXPECTED_TOKEN
+     * every other `expect()` call in this file falls back to. */
+    if (at(p, SN_TOK_RBRACE)) {
+        advance_p(p);
+    } else {
+        error_at(p, cur(p), SNOVA_UNCLOSED_BRACE,
+                "unclosed `{` — reached end of file before finding a matching `}`");
+    }
     ctx_restore(p, ctx);
     return s;
 }

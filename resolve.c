@@ -96,6 +96,17 @@ static int top_level_symbol_kind(SnDeclKind k, SnSymbolKind *out) {
 static int member_symbol_kind(SnDeclKind k, SnSymbolKind *out) {
     switch (k) {
     case SN_DECL_METHOD:
+    /* Extension members (both `extension X { func f() }` and the
+     * single-declaration `extension X.f()` sugar) are parsed as
+     * SN_DECL_FUNC, never SN_DECL_METHOD — parse_extension() always
+     * builds a plain func decl for the member. Without this case,
+     * collect_member() silently dropped every extension method (the
+     * `!via_extension` FUNC-in-type-body diagnostic above is the only
+     * other place SN_DECL_FUNC meets a member scope, and it already
+     * reports its own error), so no `extension` block or single-decl
+     * method — including Option/Result's isSome()/unwrap()/map() —
+     * was ever actually resolvable as a member. */
+    case SN_DECL_FUNC:
         *out = SN_SYM_METHOD;
         return 1;
     case SN_DECL_FIELD:

@@ -34,6 +34,11 @@
 #define SNOVA_BAD_ACCESSOR       105
 #define SNOVA_EXPECTED_TOKEN     106
 #define SNOVA_EXPECTED_NAME      107
+/* Canonical, not new: docs/snovalang-diagnostics.md already documents
+ * SNOVA008 as "Unclosed `{` delimiter" — snovac just never emitted it,
+ * falling back to the generic SNOVA_EXPECTED_TOKEN (106) whenever a block
+ * ran out of source before its closing `}`. */
+#define SNOVA_UNCLOSED_BRACE     8
 #define SNOVA_REDUNDANT_NULL_COALESCING 201
 #define SNOVA_MISMATCHED_FALLBACK       202
 #define SNOVA_OPTIONAL_CHAINING_NON_OPTIONAL 203

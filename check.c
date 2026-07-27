@@ -17,6 +17,8 @@ void sn_checker_init(SnChecker *c, SnArena *a, SnInternTable *it, SnDiagSink *di
     c->current_return_type = NULL;
     c->type_params = NULL;
     c->in_constructor = 0;
+    c->in_async_body = 0;
+    c->in_pulsar_launch = 0;
     c->loop_depth = 0;
 }
 
@@ -420,24 +422,31 @@ static const char *resolve_package_prefix(SnChecker *c, SnScope *local, SnExpr *
  * the type"), so there is no symbol to resolve and sn_resolve_ident would
  * report SNOVA0023 for a name that is perfectly real. Returns the type, or
  * NULL when `e` is not one of these. */
-static SnTypeRep *intrinsic_type_ref(SnChecker *c, SnExpr *e) {
-    if (e->kind != SN_EXPR_IDENT || !e->text) {
+static SnTypeRep *intrinsic_generic_ref(SnChecker *c, const char *name,
+                                        const SnList *type_args) {
+    if (!name) {
         return NULL;
     }
-    const char *iname = sn_intern_cstr(c->intern, e->text);
+    const char *iname = sn_intern_cstr(c->intern, name);
     if (!sn_builtin_is_generic_name(c->intern, iname)) {
         return NULL;
     }
     SnTypeRep **args = NULL;
-    if (e->type_args.len) {
+    if (type_args->len) {
         args = (SnTypeRep **)sn_arena_alloc(c->arena,
-                                            e->type_args.len * sizeof(SnTypeRep *));
-        for (size_t i = 0; i < e->type_args.len; i++) {
-            args[i] = sn_check_resolve_type(c, SN_LIST_AT(e->type_args, SnType, i));
+                                            type_args->len * sizeof(SnTypeRep *));
+        for (size_t i = 0; i < type_args->len; i++) {
+            args[i] = sn_check_resolve_type(c, SN_LIST_AT(*type_args, SnType, i));
         }
     }
-    return sn_builtin_generic(c->types, c->intern, iname, args,
-                              (uint32_t)e->type_args.len);
+    return sn_builtin_generic(c->types, c->intern, iname, args, (uint32_t)type_args->len);
+}
+
+static SnTypeRep *intrinsic_type_ref(SnChecker *c, SnExpr *e) {
+    if (e->kind != SN_EXPR_IDENT || !e->text) {
+        return NULL;
+    }
+    return intrinsic_generic_ref(c, e->text, &e->type_args);
 }
 
 static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
@@ -753,6 +762,13 @@ static void check_constructor_call(SnChecker *c, SnExpr *call_expr, SnSymbol *ty
         return;
     }
 
+    if (d->is_abstract) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ABSTRACT_INSTANTIATION, call_expr->span,
+                    "cannot instantiate abstract class `%s`",
+                    d->name ? d->name : "<type>");
+        return;
+    }
+
     /* An explicitly written signature wins over the field list: the
      * `class Foo(a: int)` primary-constructor form (parse_decl.c keeps it in
      * `params`), then a `constructor(...)` member (parse_decl.c parses it as a
@@ -864,13 +880,32 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
         /* `Partial<User>(name: "Ada", age: 36)` — construction of an
          * intrinsic generic. No symbol exists for the callee; the type IS the
          * result. Resolved before resolve_value_symbol so the callee is never
-         * looked up as a value. */
-        SnTypeRep *intrinsic_ctor = intrinsic_type_ref(c, e->lhs);
+         * looked up as a value.
+         *
+         * Unlike the `Array<Post>.new()` shape (where the postfix loop
+         * repurposes the CALL node into an IDENT and its `type_args` land on
+         * that same node — see intrinsic_type_ref's header comment), a DIRECT
+         * call keeps `e->lhs` as the plain, unmodified callee ident and
+         * attaches `<User>` to the CALL node `e` itself (parse_expr.c:
+         * `e->type_args = args` in the postfix loop, before `parse_call_args`
+         * fills `e->args`). Looking up type args on `e->lhs` here always saw
+         * an empty list, so `Partial<T>`/`Array<T>` direct-call construction
+         * silently typed as `any` (0 type args) instead of `T`. */
+        SnTypeRep *intrinsic_ctor = e->lhs->kind == SN_EXPR_IDENT
+            ? intrinsic_generic_ref(c, e->lhs->text, &e->type_args)
+            : NULL;
         SnSymbol *callee_sym =
             intrinsic_ctor ? NULL : resolve_value_symbol(c, local, e->lhs);
         if (intrinsic_ctor) {
             e->lhs->resolved_type = intrinsic_ctor;
         }
+        /* Consumed here, before argument-checking recurses into anything
+         * that might itself be a `pulsar work()` launch — SNOVA124 exempts
+         * only the CALL directly named by a `pulsar` statement's own expr,
+         * never a call nested inside its arguments or a launch nested
+         * elsewhere in the tree. */
+        int is_pulsar_launch_call = c->in_pulsar_launch;
+        c->in_pulsar_launch = 0;
 
         SnTypeRep **arg_tys = NULL;
         if (e->args.len) {
@@ -898,6 +933,11 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
             break;
         }
         if (callee_sym->kind == SN_SYM_FUNC || callee_sym->kind == SN_SYM_METHOD) {
+            if (callee_sym->decl->is_pulsar && !is_pulsar_launch_call) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_DIRECT_CALL, e->span,
+                            "pulsar function `%s` cannot be called directly — use `pulsar %s(...)`",
+                            callee_sym->name, callee_sym->name);
+            }
             check_call_args(c, e, callee_sym, &callee_sym->decl->params, arg_tys, e->args.len);
             result = resolve_declared_type(c, callee_sym, callee_sym->decl->ret);
             break;
@@ -960,6 +1000,50 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     }
 
     case SN_EXPR_BINARY: {
+        if (e->op == SN_TOK_QUESTION) {
+            /* Ternary `cond ? then : else`. parse_expr.c's parse_expr()
+             * encodes this as a BINARY QUESTION node whose rhs is itself a
+             * BINARY COLON node pairing the two branches — reusing the
+             * binary slots rather than a dedicated AST node (see its
+             * comment: "Modelled as a one-armed match-free conditional
+             * using the binary slots"). QUESTION/COLON are therefore never
+             * real operators here and must not reach check_binary() below,
+             * which has no case for either and would report a spurious
+             * "operator `:` cannot be applied" (this was, until now, true
+             * of every ternary in the corpus, single- or multi-line).
+             * SN_EXPR_UNARY with op SN_TOK_QUESTION is the unrelated
+             * postfix error-propagation form, handled by check_unary(). */
+            SnTypeRep *cond_ty = sn_check_expr(c, local, e->lhs);
+            if (!is_error(cond_ty) && !sn_type_is_any(cond_ty) &&
+                cond_ty->tag != SN_T_BOOL) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_CONDITION_NOT_BOOL, e->lhs->span,
+                            "condition must be `bool`");
+            }
+            SnExpr *pair = e->rhs;
+            SnTypeRep *then_ty = sn_check_expr(c, local, pair->lhs);
+            SnTypeRep *else_ty = sn_check_expr(c, local, pair->rhs);
+            pair->resolved_type = sn_type_error(c->types);
+            if (is_error(then_ty) || is_error(else_ty)) {
+                result = sn_type_error(c->types);
+            } else if (sn_type_is_any(then_ty)) {
+                result = else_ty;
+            } else if (sn_type_is_any(else_ty)) {
+                result = then_ty;
+            } else if (then_ty == else_ty) {
+                result = then_ty;
+            } else if (!types_clash(c, then_ty, else_ty)) {
+                result = else_ty; /* then_ty is a subtype of else_ty */
+            } else if (!types_clash(c, else_ty, then_ty)) {
+                result = then_ty; /* else_ty is a subtype of then_ty */
+            } else {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_BINARY_TYPE_MISMATCH, e->span,
+                            "ternary branches have incompatible types (no implicit "
+                            "numeric promotion — branches must match, or one must be "
+                            "a subtype of the other)");
+                result = sn_type_error(c->types);
+            }
+            break;
+        }
         SnTypeRep *lt = sn_check_expr(c, local, e->lhs);
         SnTypeRep *rt = sn_check_expr(c, local, e->rhs);
         result = check_binary(c, e, lt, rt);
@@ -1018,6 +1102,10 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     }
 
     case SN_EXPR_AWAIT: {
+        if (!c->in_async_body) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_AWAIT_OUTSIDE_ASYNC, e->span,
+                        "`await` is only valid inside an `async func`/`async method`");
+        }
         SnTypeRep *inner = sn_check_expr(c, local, e->lhs);
         if (!is_error(inner) && inner->tag == SN_T_NAMED && inner->decl &&
             inner->decl->name == sn_intern_cstr(c->intern, "Task") && inner->nargs >= 1) {
@@ -1345,7 +1433,14 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
 
     case SN_STMT_PULSAR:
         if (s->expr) {
+            /* `pulsar work()` — the one place a direct call to a pulsar
+             * function is legal (SNOVA124 forbids it everywhere else).
+             * Consumed by the CALL expression's own callee resolution, not
+             * cleared here, so it survives exactly one level of `sn_check_expr`
+             * recursion into the CALL node itself. */
+            c->in_pulsar_launch = 1;
             sn_check_expr(c, local, s->expr);
+            c->in_pulsar_launch = 0;
         }
         break;
     }
@@ -1401,6 +1496,29 @@ static int stmt_always_returns(const SnStmt *s) {
     }
 }
 
+/* SNOVA122's shape rule (docs/snovalang-diagnostics.md, mirrored from
+ * crates/snovalang/src/native/selfcheck/pulsar.rs): a pulsar function
+ * returns `unit`, `Channel<T>`, or `Select<T>` — nothing else, since a
+ * pulsar is fire-and-forget and has no `Task<T>` to hand back a value
+ * through. NULL/error types are let through so this never doubles up on a
+ * diagnostic sn_check_resolve_type already emitted. */
+static int is_allowed_pulsar_return(SnChecker *c, const SnTypeRep *rt) {
+    if (!rt || is_error(rt)) {
+        return 1;
+    }
+    if (rt->tag == SN_T_UNIT) {
+        return 1;
+    }
+    if (rt->tag == SN_T_NAMED && rt->decl) {
+        const char *name = rt->decl->name;
+        if (name == sn_intern_cstr(c->intern, "Channel") ||
+            name == sn_intern_cstr(c->intern, "Select")) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Defines `owner`'s declared type parameters as SN_SYM_TYPE entries in
  * `scope`. A name already present (a method re-declaring its class's `T`)
  * keeps the first binding — shadowing here would only produce a second
@@ -1447,6 +1565,11 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
     }
 
     c->current_return_type = sn_check_resolve_type(c, decl->ret);
+    if (decl->is_pulsar && !is_allowed_pulsar_return(c, c->current_return_type)) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_INVALID_RETURN, decl->span,
+                    "pulsar function `%s` must return `unit`, `Channel<T>`, or `Select<T>`",
+                    decl->name ? decl->name : "<fn>");
+    }
     int is_layer3 = (c->current_package &&
                      (strncmp(c->current_package, "builtin", 7) == 0 ||
                       strncmp(c->current_package, "stdlib", 6) == 0));
@@ -1467,6 +1590,7 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
     c->in_constructor =
         decl->name && sn_intern_cstr(c->intern, decl->name) ==
                           sn_intern_cstr(c->intern, "constructor");
+    c->in_async_body = decl->is_async;
     sn_check_stmt(c, &params_scope, decl->body);
     if (c->current_return_type && !is_error(c->current_return_type) &&
         c->current_return_type->tag != SN_T_UNIT &&
@@ -1476,6 +1600,7 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
                     decl->name ? decl->name : "<fn>");
     }
     c->in_constructor = 0;
+    c->in_async_body = 0;
     c->current_return_type = NULL;
     c->type_params = NULL;
 }

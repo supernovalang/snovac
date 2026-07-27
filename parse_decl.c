@@ -7,13 +7,17 @@ typedef struct {
     uint8_t is_static;
     uint8_t is_override;
     uint8_t is_async;
+    uint8_t is_abstract;
+    uint8_t is_pulsar;
 } Modifiers;
 
 /* Is `w` a soft modifier — a word that only acts as one when a declaration
- * keyword follows, so it stays an ordinary identifier everywhere else? */
+ * keyword follows, so it stays an ordinary identifier everywhere else?
+ * `abstract` is excluded: it is recorded (see parse_modifiers), not just
+ * consumed-and-discarded like the rest of this list. */
 static int is_soft_modifier(const char *w) {
     return strcmp(w, "data") == 0 || strcmp(w, "unsafe") == 0 ||
-           strcmp(w, "sealed") == 0 || strcmp(w, "abstract") == 0 ||
+           strcmp(w, "sealed") == 0 ||
            strcmp(w, "final") == 0 || strcmp(w, "open") == 0 ||
            strcmp(w, "internal") == 0;
 }
@@ -25,13 +29,24 @@ static int starts_decl_kw(SnTokKind k) {
 }
 
 static Modifiers parse_modifiers(P *p) {
-    Modifiers m = {SN_VIS_DEFAULT, 0, 0, 0};
+    Modifiers m = {SN_VIS_DEFAULT, 0, 0, 0, 0, 0};
     for (;;) {
         if (at(p, SN_TOK_PUBLIC))    { m.vis = SN_VIS_PUBLIC;    advance_p(p); continue; }
         if (at(p, SN_TOK_PRIVATE))   { m.vis = SN_VIS_PRIVATE;   advance_p(p); continue; }
         if (at(p, SN_TOK_PROTECTED)) { m.vis = SN_VIS_PROTECTED; advance_p(p); continue; }
         if (at(p, SN_TOK_STATIC))    { m.is_static = 1;   advance_p(p); continue; }
         if (at(p, SN_TOK_OVERRIDE))  { m.is_override = 1; advance_p(p); continue; }
+        /* `abstract` is a soft modifier like the others (an ordinary
+         * identifier everywhere else — starts_decl_kw() gates it below the
+         * same way), but check.c needs to know a class was marked abstract
+         * to reject `Base()` where `class Base` never gets a body, so it is
+         * recorded instead of just skipped. */
+        if (at(p, SN_TOK_IDENT) && strcmp(cur(p)->text, "abstract") == 0 &&
+            starts_decl_kw(peek_at(p, 1)->kind)) {
+            m.is_abstract = 1;
+            advance_p(p);
+            continue;
+        }
         /* `async` is a modifier only when a declaration keyword follows;
          * otherwise it is an ordinary identifier. */
         if (at(p, SN_TOK_ASYNC) && (peek_at(p, 1)->kind == SN_TOK_METHOD ||
@@ -41,9 +56,12 @@ static Modifiers parse_modifiers(P *p) {
             continue;
         }
         /* `pulsar func worker(): unit { }` — pulsar is a declaration modifier
-         * here, and a statement keyword elsewhere. */
+         * here, and a statement keyword elsewhere (SN_STMT_PULSAR in
+         * parse_stmt.c, `pulsar work()`). Recorded so check.c can enforce
+         * SNOVA122 (return-type shape) and SNOVA124 (no direct call). */
         if (at(p, SN_TOK_PULSAR) && (peek_at(p, 1)->kind == SN_TOK_FUNC ||
                                      peek_at(p, 1)->kind == SN_TOK_METHOD)) {
+            m.is_pulsar = 1;
             advance_p(p);
             continue;
         }
@@ -273,6 +291,8 @@ SnDecl *parse_decl(P *p, int in_type_body) {
     d->is_static = mods.is_static;
     d->is_override = mods.is_override;
     d->is_async = mods.is_async;
+    d->is_abstract = mods.is_abstract;
+    d->is_pulsar = mods.is_pulsar;
 
     if (k == SN_DECL_FIELD) {
         d->is_mutable = at(p, SN_TOK_VAR) ? 1u : 0u;
