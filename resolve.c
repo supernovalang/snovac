@@ -31,6 +31,45 @@ SnScope *sn_resolver_package_scope(const SnResolver *r, const char *package_name
     return NULL;
 }
 
+/* An import names either a whole package or PACKAGE.SYMBOL — package.c's
+ * resolve_import_target comment documents the same ambiguity for cycle
+ * detection/SNOVA050 ("the symbol spelling is the common one in real
+ * projects"). Every import-scope lookup in this file needs the same
+ * longest-match behavior: try the import string outright as a package name,
+ * then drop trailing segments until one names a real, collected package.
+ * Without this, `import a.b.RealSymbol` (a.b is the real package) never
+ * actually brought RealSymbol into scope — only the bare `import a.b` form
+ * worked, silently, even though package.c's own linking phase already
+ * accepts both spellings as valid. Returns NULL (an uninterned string, not
+ * a valid scope key) when no prefix is a collected package at all. */
+static const char *resolve_import_package_name(const SnResolver *r, const char *imp_pkg) {
+    if (sn_resolver_package_scope(r, imp_pkg)) {
+        return imp_pkg;
+    }
+    char prefix[2048];
+    size_t n = strlen(imp_pkg);
+    if (n >= sizeof(prefix)) {
+        return NULL;
+    }
+    memcpy(prefix, imp_pkg, n + 1u);
+    for (;;) {
+        char *dot = strrchr(prefix, '.');
+        if (!dot) {
+            return NULL;
+        }
+        *dot = '\0';
+        const char *candidate = sn_intern_cstr(r->intern, prefix);
+        if (sn_resolver_package_scope(r, candidate)) {
+            return candidate;
+        }
+    }
+}
+
+static SnScope *resolve_import_scope(const SnResolver *r, const char *imp_pkg) {
+    const char *real_pkg = resolve_import_package_name(r, imp_pkg);
+    return real_pkg ? sn_resolver_package_scope(r, real_pkg) : NULL;
+}
+
 SnScope *sn_resolver_type_scope(const SnResolver *r, const SnDecl *type_decl) {
     for (SnTypeScopeEntry *e = r->type_scopes; e; e = e->next) {
         if (e->type_decl == type_decl) {
@@ -563,7 +602,7 @@ SnSymbol *sn_resolve_ident(SnResolver *r, const char *current_package,
     if (imports) {
         for (size_t i = 0; i < imports->len; i++) {
             const char *imp_pkg = SN_LIST_AT(*imports, const char, i);
-            SnScope *imp_scope = sn_resolver_package_scope(r, imp_pkg);
+            SnScope *imp_scope = resolve_import_scope(r, imp_pkg);
             if (!imp_scope) {
                 continue;
             }
@@ -602,7 +641,7 @@ SnTypeRep *sn_resolve_type_name(SnResolver *r, const char *current_package,
     if (!sym && imports) {
         for (size_t i = 0; i < imports->len && !sym; i++) {
             const char *imp_pkg = SN_LIST_AT(*imports, const char, i);
-            SnScope *imp_scope = sn_resolver_package_scope(r, imp_pkg);
+            SnScope *imp_scope = resolve_import_scope(r, imp_pkg);
             if (imp_scope) {
                 sym = sn_scope_lookup_local(imp_scope, iname);
             }
@@ -688,7 +727,7 @@ SnSymbol *sn_resolve_member_path(SnResolver *r, const char *current_package,
     if (imports) {
         for (size_t i = 0; i < imports->len; i++) {
             const char *imp_pkg = SN_LIST_AT(*imports, const char, i);
-            SnScope *imp_scope = sn_resolver_package_scope(r, imp_pkg);
+            SnScope *imp_scope = resolve_import_scope(r, imp_pkg);
             if (!imp_scope) {
                 continue;
             }
@@ -731,16 +770,23 @@ SnSymbol *sn_resolve_member_path(SnResolver *r, const char *current_package,
     }
 
     /* 2.5. try as an imported package alias: if `head` matches the last
-     * segment of an imported package, treat it as that package. */
+     * segment of an imported package, treat it as that package. `imp_pkg`
+     * itself is often PACKAGE.SYMBOL rather than a real package name (the
+     * common `import a.b.RealSymbol` spelling), so the scope lookup below
+     * needs the real, collected package name — resolve_import_package_name
+     * finds it the same way resolve_import_scope does elsewhere in this
+     * file. */
     if (!matched_pkg && imports) {
         for (size_t i = 0; i < imports->len; i++) {
             const char *imp_pkg = SN_LIST_AT(*imports, const char, i);
             const char *last = strrchr(imp_pkg, '.');
             const char *stem = last ? last + 1 : imp_pkg;
             if (strcmp(stem, head) == 0) {
-                matched_pkg = imp_pkg;
-                matched_upto = 1;
-                break;
+                matched_pkg = resolve_import_package_name(r, imp_pkg);
+                if (matched_pkg) {
+                    matched_upto = 1;
+                    break;
+                }
             }
         }
     }

@@ -144,6 +144,64 @@ EOF
 assert "project: symbol import resolves to its package" 0 \
   "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
 
+# The above only proves the IMPORT LINE doesn't trip SNOVA0050 (package-graph
+# linking); it never actually referenced `Helper` by name anywhere, so it
+# could not catch resolve.c's own copy of the same bug. Every import-scope
+# lookup in resolve.c (sn_resolve_ident, sn_resolve_type_name,
+# sn_resolve_member_path) looked up `sn_resolver_package_scope(r, imp_pkg)`
+# with the RAW import string as written — for `import app.lib.Helper` that's
+# "app.lib.Helper", which matches no real package (the real one is
+# "app.lib"), so the exact-pointer-equality scope lookup always failed
+# silently. Only the bare `import app.lib` form ever worked.
+#
+# This needs its own project (with a real snova.toml, not $PROJ, which has
+# none): without a manifest, source_root falls back to just the entry file's
+# own directory (project_discover's documented behavior), so a sibling
+# package directory like src/lib/ is never scanned at all — resolving
+# `app.lib.Helper` would then hit resolve_import_target()'s longest-match
+# fallthrough all the way down to "app" itself (the importer's own,
+# genuinely-scanned package), which happens to exist and masks the bug
+# behind a coincidental self-package match instead of a real cross-package
+# one. A manifest makes source_root the project's whole `src/`, covering
+# both directories for real.
+SYMPROJ="$(mktemp -d)"
+mkdir -p "$SYMPROJ/src/app" "$SYMPROJ/src/lib"
+cat > "$SYMPROJ/snova.toml" <<'EOF'
+[package]
+name = "symproj"
+EOF
+cat > "$SYMPROJ/src/lib/Util.snova" <<'EOF'
+package app.lib
+
+public struct Helper {
+    public let id: int
+}
+EOF
+cat > "$SYMPROJ/src/app/Main.snova" <<'EOF'
+package app
+
+import app.lib.Helper
+
+func main(): int {
+    let h = Helper { id: 1 }
+    return h.id
+}
+EOF
+
+assert "project: symbol import resolves the symbol itself, not just the package" 0 \
+  "$(rc_of "$SNOVAC" check --project "$SYMPROJ/src/app/Main.snova")"
+rm -rf "$SYMPROJ"
+
+cat > "$PROJ/src/app/Main.snova" <<'EOF'
+package app
+
+import app.Models
+
+func main(): int {
+    return 0
+}
+EOF
+
 # No prefix of this names a declared package, and it is not under a
 # toolchain-provided namespace, so it stays a reported error.
 cat > "$PROJ/src/app/Models.snova" <<'EOF'
