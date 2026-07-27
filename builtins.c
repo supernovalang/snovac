@@ -123,11 +123,18 @@ SnTypeRep *sn_builtin_generic(SnTypeTable *t, SnInternTable *it, const char *ina
          * for, so it degrades to `any` rather than inventing a shape. */
         return nargs >= 1 ? args[0] : sn_type_any(t);
     }
+    if (iname == sn_intern_cstr(it, "Option") || iname == sn_intern_cstr(it, "Result")) {
+        static SnSymbol opt_sym = { .name = "Option", .kind = SN_SYM_TYPE };
+        static SnSymbol res_sym = { .name = "Result", .kind = SN_SYM_TYPE };
+        SnSymbol *sym = (iname == sn_intern_cstr(it, "Option")) ? &opt_sym : &res_sym;
+        return sn_type_named(t, sym, args, nargs);
+    }
     return NULL;
 }
 
 int sn_builtin_is_generic_name(SnInternTable *it, const char *iname) {
-    return iname == sn_intern_cstr(it, "Array") || iname == sn_intern_cstr(it, "Partial");
+    return iname == sn_intern_cstr(it, "Array") || iname == sn_intern_cstr(it, "Partial") ||
+           iname == sn_intern_cstr(it, "Option") || iname == sn_intern_cstr(it, "Result");
 }
 
 SnTypeRep *sn_builtin_member(SnTypeTable *t, SnInternTable *it, const SnTypeRep *recv,

@@ -83,6 +83,7 @@ static void scan_operator(Lexer *L, char c, char n1, size_t start, uint32_t sl,
         return;
     case '?':
         if (n1 == '?') { advance(L); emit(L, SN_TOK_QQ, start, sl, slb); }
+        else if (n1 == '.' && !is_digit(peek2(L))) { advance(L); emit(L, SN_TOK_QDOT, start, sl, slb); }
         else { emit(L, SN_TOK_QUESTION, start, sl, slb); }
         return;
     case '~':

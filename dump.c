@@ -19,6 +19,7 @@ void sn_dump_type(const SnType *t) {
             printf(" -> ");
             sn_dump_type(t->ret);
         }
+        if (t->is_optional) printf("?");
         return;
     }
     printf("%s", t->name ? t->name : "?");
@@ -30,6 +31,7 @@ void sn_dump_type(const SnType *t) {
         }
         printf(">");
     }
+    if (t->is_optional) printf("?");
 }
 
 static const char *vis_name(SnVisibility v) {

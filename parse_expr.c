@@ -15,7 +15,7 @@ static BindPower infix_power(SnTokKind k) {
     case SN_TOK_STAR_EQ: case SN_TOK_SLASH_EQ:
         b.lbp = 1; b.right_assoc = 1; break;
     case SN_TOK_OROR:    b.lbp = 2; break;
-    case SN_TOK_QQ:      b.lbp = 2; break; /* `a ?? b` null-coalescing */
+    case SN_TOK_QQ:      b.lbp = 2; b.right_assoc = 1; break; /* `a ?? b` right-associative null-coalescing */
     case SN_TOK_ANDAND:  b.lbp = 3; break;
     case SN_TOK_PIPE:    b.lbp = 4; break;
     case SN_TOK_CARET:   b.lbp = 5; break;
@@ -54,7 +54,10 @@ static int at_shift(P *p, SnTokKind *op_out) {
     if (a->span.offset + a->span.len != b->span.offset) {
         return 0; /* `a > > b` is not a shift */
     }
-    *op_out = k;
+    /* Not SN_TOK_LT/SN_TOK_GT: those already mean "less/greater than" to
+     * every consumer of e->op. A dedicated op keeps shift from being
+     * silently misread as a comparison. */
+    *op_out = (k == SN_TOK_LT) ? SN_TOK_SHL : SN_TOK_SHR;
     return 1;
 }
 
@@ -152,6 +155,52 @@ static SnExpr *parse_struct_lit(P *p, SnExpr *lhs, SnSpan span) {
     return e;
 }
 
+/* Disambiguates `cond ? then_e : else_e` (ternary) from `expr?` (postfix error-propagation).
+ * A ternary always has a matching `:` at the current expression nesting depth downstream. */
+static int is_ternary_question(P *p) {
+    int depth = 0;
+    size_t i = 1;
+    for (;;) {
+        const SnToken *tok = peek_at(p, i);
+        SnTokKind k = tok->kind;
+
+        if (k == SN_TOK_EOF) {
+            return 0;
+        }
+
+        if (depth == 0) {
+            if (k == SN_TOK_COLON) {
+                return 1;
+            }
+            if (k == SN_TOK_SEMI || k == SN_TOK_COMMA ||
+                k == SN_TOK_RPAREN || k == SN_TOK_RBRACE || k == SN_TOK_RBRACKET ||
+                k == SN_TOK_FATARROW) {
+                return 0;
+            }
+            if (sn_tok_is_keyword(k)) {
+                switch (k) {
+                case SN_TOK_AS: case SN_TOK_IS: case SN_TOK_TRUE: case SN_TOK_FALSE:
+                case SN_TOK_THIS: case SN_TOK_NEW: case SN_TOK_AWAIT:
+                    break;
+                default:
+                    return 0;
+                }
+            }
+        }
+
+        if (k == SN_TOK_LPAREN || k == SN_TOK_LBRACE || k == SN_TOK_LBRACKET) {
+            depth++;
+        } else if (k == SN_TOK_RPAREN || k == SN_TOK_RBRACE || k == SN_TOK_RBRACKET) {
+            depth--;
+            if (depth < 0) {
+                return 0;
+            }
+        }
+
+        i++;
+    }
+}
+
 static SnExpr *parse_postfix(P *p, SnExpr *lhs) {
     for (;;) {
         if (!lhs) {
@@ -159,12 +208,40 @@ static SnExpr *parse_postfix(P *p, SnExpr *lhs) {
         }
         SnSpan span = cur(p)->span;
 
-        if (at(p, SN_TOK_DOT)) {
+        if (at(p, SN_TOK_DOT) || at(p, SN_TOK_QDOT)) {
+            SnTokKind op = kind(p);
             advance_p(p);
             SnExpr *e = new_expr(p, SN_EXPR_MEMBER, span);
+            e->op = op;
             e->lhs = lhs;
             e->text = expect_name(p); /* keywords are legal member names */
             lhs = e;
+            continue;
+        }
+        if (at(p, SN_TOK_COLONCOLON)) {
+            /* `::` is only allowed for package function calls: `SomePackage::functionName(...)`. */
+            SnTokKind n1 = peek_at(p, 1)->kind;
+            SnTokKind n2 = peek_at(p, 2)->kind;
+            if (at_name_tok(n1) && n2 == SN_TOK_LPAREN) {
+                advance_p(p);
+                SnExpr *e = new_expr(p, SN_EXPR_MEMBER, span);
+                e->op = SN_TOK_COLONCOLON;
+                e->lhs = lhs;
+                e->text = expect_name(p);
+                lhs = e;
+                continue;
+            } else {
+                error_at(p, cur(p), SNOVA_EXPECTED_TOKEN, "`::` is only allowed for package function calls like `SomePackage::functionName(...)`");
+                advance_p(p);
+                continue;
+            }
+        }
+        if (at(p, SN_TOK_QUESTION) && !is_ternary_question(p)) {
+            advance_p(p);
+            SnExpr *u = new_expr(p, SN_EXPR_UNARY, span);
+            u->op = SN_TOK_QUESTION;
+            u->lhs = lhs;
+            lhs = u;
             continue;
         }
         if (at(p, SN_TOK_LPAREN)) {
@@ -273,57 +350,26 @@ static SnExpr *parse_binary(P *p, int min_bp) {
     return lhs;
 }
 
-/* Can this token begin an expression? Used to tell `cond ? a : b` from the
- * postfix `expr?` error-propagation form. */
-static int starts_expr(SnTokKind k) {
-    switch (k) {
-    case SN_TOK_RPAREN: case SN_TOK_RBRACE: case SN_TOK_RBRACKET:
-    case SN_TOK_COMMA:  case SN_TOK_SEMI:   case SN_TOK_EOF:
-    case SN_TOK_COLON:  case SN_TOK_FATARROW:
-    /* Statement-only keywords: after `parseInt(x)?` the next line may well
-     * begin with `return` — that is the postfix `?`, never a ternary whose
-     * then-branch is the identifier `return`. */
-    case SN_TOK_RETURN: case SN_TOK_THROW: case SN_TOK_BREAK:
-    case SN_TOK_CONTINUE: case SN_TOK_LET: case SN_TOK_VAR:
-    case SN_TOK_ELSE:
-        return 0;
-    default:
-        return 1;
-    }
-}
-
 SnExpr *parse_expr(P *p) {
     SnExpr *e = parse_binary(p, 1);
 
-    if (at(p, SN_TOK_QUESTION)) {
+    if (at(p, SN_TOK_QUESTION) && is_ternary_question(p)) {
         SnSpan span = cur(p)->span;
-        /* A ternary keeps its then-branch on the line of the `?`; a `?` whose
-         * next token starts a new line is the postfix error-propagation form
-         * ending its statement. */
-        if (starts_expr(peek_at(p, 1)->kind) &&
-            peek_at(p, 1)->span.line == cur(p)->span.line) {
-            /* Ternary: `parseInt(e) >= 0 ? intToString(...) : "-"`. Modelled as
-             * a one-armed match-free conditional using the binary slots. */
-            advance_p(p);
-            SnExpr *t = new_expr(p, SN_EXPR_BINARY, span);
-            t->op = SN_TOK_QUESTION;
-            t->lhs = e;
-            SnExpr *then_e = parse_expr(p);
-            expect(p, SN_TOK_COLON);
-            SnExpr *else_e = parse_expr(p);
-            SnExpr *pair = new_expr(p, SN_EXPR_BINARY, span);
-            pair->op = SN_TOK_COLON;
-            pair->lhs = then_e;
-            pair->rhs = else_e;
-            t->rhs = pair;
-            return t;
-        }
-        /* Postfix `?`: `Db.connect(url)?` propagates an error result. */
+        /* Ternary: `parseInt(e) >= 0 ? intToString(...) : "-"`. Modelled as
+         * a one-armed match-free conditional using the binary slots. */
         advance_p(p);
-        SnExpr *u = new_expr(p, SN_EXPR_UNARY, span);
-        u->op = SN_TOK_QUESTION;
-        u->lhs = e;
-        return u;
+        SnExpr *t = new_expr(p, SN_EXPR_BINARY, span);
+        t->op = SN_TOK_QUESTION;
+        t->lhs = e;
+        SnExpr *then_e = parse_expr(p);
+        expect(p, SN_TOK_COLON);
+        SnExpr *else_e = parse_expr(p);
+        SnExpr *pair = new_expr(p, SN_EXPR_BINARY, span);
+        pair->op = SN_TOK_COLON;
+        pair->lhs = then_e;
+        pair->rhs = else_e;
+        t->rhs = pair;
+        return t;
     }
     return e;
 }

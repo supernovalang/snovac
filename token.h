@@ -60,6 +60,7 @@ typedef enum {
     SN_TOK_AT,          /* @decorator */
     SN_TOK_QUESTION,
     SN_TOK_QQ,          /* ??  null-coalescing */
+    SN_TOK_QDOT,        /* ?.  safe navigation / optional chaining */
     /* `::` is NOT Snovalang syntax. It is lexed as its own token purely so the
      * parser can say "found `::`" instead of reporting two stray colons. The
      * only occurrence in the repository is
@@ -79,6 +80,14 @@ typedef enum {
     SN_TOK_RECV_BIND,   /* <~  receive-bind: `x <~ ch`, `for v <~ ch` */
     SN_TOK_FATARROW,    /* =>  match arm */
     SN_TOK_PLUS_EQ, SN_TOK_MINUS_EQ, SN_TOK_STAR_EQ, SN_TOK_SLASH_EQ,
+
+    /* `<<`/`>>` are never lexed (see the file comment): the lexer always emits
+     * two adjacent SN_TOK_LT or SN_TOK_GT. The parser's at_shift() folds that
+     * pair into ONE binary expression, but it must record the op as something
+     * other than SN_TOK_LT/SN_TOK_GT — those already mean "less/greater than"
+     * to the checker and evaluator. These two values exist only to be written
+     * into SnExpr.op for a shift node; nothing ever lexes them. */
+    SN_TOK_SHL, SN_TOK_SHR,
 
     SN_TOK__COUNT
 } SnTokKind;

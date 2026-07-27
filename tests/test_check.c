@@ -789,6 +789,130 @@ static void test_this_in_method(const char *tmp) {
     sn_arena_free(&w.arena);
 }
 
+static void test_nested_optional_rejected(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/opt2", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snova",
+              "package pkg.opt2\n\n"
+              "func bad(x: string" "?" "?): int {\n"
+              "    return 0\n"
+              "}\n");
+
+    World w;
+    world_init(&w);
+    run_check_on_func(&w, dir, "pkg.opt2", "bad");
+    world_finish_diag(&w);
+    CHECK("nested optional: T?? emits error", w.diag.error_count == 1);
+    CHECK("nested optional: emits SNOVA0204", diag_has_code(&w, "SNOVA0204"));
+
+    sn_arena_free(&w.arena);
+}
+
+static void test_null_coalescing_semantics(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/nullcoalesce", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snova",
+              "package pkg.nullcoalesce\n\n"
+              "func bad_fallback(opt: Option<int>): int {\n"
+              "    return opt ?? \"not an int\"\n"
+              "}\n");
+
+    World w;
+    world_init(&w);
+    run_check_on_func(&w, dir, "pkg.nullcoalesce", "bad_fallback");
+    world_finish_diag(&w);
+    CHECK("null coalescing: mismatched fallback emits error", w.diag.error_count == 1);
+    CHECK("null coalescing: emits SNOVA0202", diag_has_code(&w, "SNOVA0202"));
+
+    sn_arena_free(&w.arena);
+}
+
+static void test_implicit_any_rejected(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/anyinf", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snova",
+              "package pkg.anyinf\n\n"
+              "func bad(x: any): int {\n"
+              "    let y = x\n"
+              "    return 0\n"
+              "}\n");
+
+    World w;
+    world_init(&w);
+    run_check_on_func(&w, dir, "pkg.anyinf", "bad");
+    world_finish_diag(&w);
+    CHECK("implicit any: unannotated inference emits SNOVA0211", diag_has_code(&w, "SNOVA0211"));
+
+    sn_arena_free(&w.arena);
+}
+
+static void test_public_any_in_stdlib_rejected(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/pubany", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snova",
+              "package stdlib.pubany\n\n"
+              "public func bad(x: any): int {\n"
+              "    return 0\n"
+              "}\n");
+
+    World w;
+    world_init(&w);
+    run_check_on_func(&w, dir, "stdlib.pubany", "bad");
+    world_finish_diag(&w);
+    CHECK("public any: public stdlib signature with any emits SNOVA0210", diag_has_code(&w, "SNOVA0210"));
+
+    sn_arena_free(&w.arena);
+}
+
+static void test_subsumption_non_null(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/subsumption", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snova",
+              "package pkg.subsumption\n\n"
+              "func accept_opt(opt: Option<int>): int {\n"
+              "    return 0\n"
+              "}\n"
+              "func test(): int {\n"
+              "    let x: int = 42\n"
+              "    return accept_opt(x)\n"
+              "}\n");
+
+    World w;
+    world_init(&w);
+    run_check_on_func(&w, dir, "pkg.subsumption", "test");
+    world_finish_diag(&w);
+    CHECK("subsumption: passing T to Option<T> parameter succeeds with 0 errors", w.diag.error_count == 0);
+
+    sn_arena_free(&w.arena);
+}
+
+static void test_optional_type_required(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/optreq", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snova",
+              "package pkg.optreq\n\n"
+              "func accept_concrete(val: int): int {\n"
+              "    return val\n"
+              "}\n"
+              "func test(opt: Option<int>): int {\n"
+              "    return accept_concrete(opt)\n"
+              "}\n");
+
+    World w;
+    world_init(&w);
+    run_check_on_func(&w, dir, "pkg.optreq", "test");
+    world_finish_diag(&w);
+    CHECK("optional type required: passing Option<T> where T is expected emits error", w.diag.error_count == 1);
+
+    sn_arena_free(&w.arena);
+}
+
 int main(void) {
     char tmp[] = "/tmp/snovac_check_test_XXXXXX";
     if (!mkdtemp(tmp)) {
@@ -823,6 +947,12 @@ int main(void) {
     test_literal_suffix_still_strict(tmp);
     test_func_in_class_body(tmp);
     test_extension_func_is_legal(tmp);
+    test_nested_optional_rejected(tmp);
+    test_null_coalescing_semantics(tmp);
+    test_implicit_any_rejected(tmp);
+    test_public_any_in_stdlib_rejected(tmp);
+    test_subsumption_non_null(tmp);
+    test_optional_type_required(tmp);
 
     printf("\n%d passed, %d failed\n", pass, fail);
     return fail == 0 ? 0 : 1;

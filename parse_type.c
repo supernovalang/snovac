@@ -188,8 +188,18 @@ SnType *parse_type(P *p) {
     if (at(p, SN_TOK_LT)) {
         parse_type_args(p, &t->args);
     }
-    /* `T?` optional shorthand, when present, is just sugar recorded on the name. */
-    accept(p, SN_TOK_QUESTION);
+    /* `T?` optional shorthand, recorded as is_optional on the SnType node. */
+    if (at(p, SN_TOK_QQ)) {
+        error_at(p, cur(p), SNOVA_NESTED_OPTIONAL, "nested optional type `T??` is not allowed");
+        advance_p(p);
+        t->is_optional = 1;
+    } else if (accept(p, SN_TOK_QUESTION)) {
+        t->is_optional = 1;
+        if (at(p, SN_TOK_QUESTION)) {
+            error_at(p, cur(p), SNOVA_NESTED_OPTIONAL, "nested optional type `T??` is not allowed");
+            advance_p(p);
+        }
+    }
     return wrap_array_suffix(p, t);
 }
 

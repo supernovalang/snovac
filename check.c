@@ -17,6 +17,7 @@ void sn_checker_init(SnChecker *c, SnArena *a, SnInternTable *it, SnDiagSink *di
     c->current_return_type = NULL;
     c->type_params = NULL;
     c->in_constructor = 0;
+    c->loop_depth = 0;
 }
 
 static int is_numeric(const SnTypeRep *t) {
@@ -118,6 +119,12 @@ static int types_clash(SnChecker *c, const SnTypeRep *value, const SnTypeRep *ex
     if (value == expected) {
         return 0;
     }
+    if (expected->tag == SN_T_NAMED && expected->decl &&
+        strcmp(expected->decl->name, "Option") == 0 && expected->nargs == 1) {
+        if (!types_clash(c, value, expected->args[0])) {
+            return 0; /* Subsumption: T <: T? */
+        }
+    }
     if (value->tag == SN_T_NAMED && expected->tag == SN_T_NAMED && value->decl &&
         expected->decl &&
         decl_derives_from(c, value->decl->decl, expected->decl->decl, 0)) {
@@ -128,7 +135,7 @@ static int types_clash(SnChecker *c, const SnTypeRep *value, const SnTypeRep *ex
 
 /* ── AST type -> resolved type ────────────────────────────────────────────── */
 
-SnTypeRep *sn_check_resolve_type(SnChecker *c, const SnType *t) {
+static SnTypeRep *sn_check_resolve_type_base(SnChecker *c, const SnType *t) {
     if (!t) {
         return sn_type_error(c->types);
     }
@@ -203,6 +210,15 @@ SnTypeRep *sn_check_resolve_type(SnChecker *c, const SnType *t) {
         return sn_type_error(c->types);
     }
     return sn_type_error(c->types);
+}
+
+SnTypeRep *sn_check_resolve_type(SnChecker *c, const SnType *t) {
+    SnTypeRep *res = sn_check_resolve_type_base(c, t);
+    if (t && t->is_optional && res != sn_type_error(c->types)) {
+        res = sn_builtin_generic(c->types, c->intern,
+                                  sn_intern_cstr(c->intern, "Option"), &res, 1);
+    }
+    return res;
 }
 
 /* ── symbol -> type, and the linear-scan helpers that back it ────────────── */
@@ -470,11 +486,23 @@ static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
             return NULL;
         }
         const char *mname = sn_intern_cstr(c->intern, e->text);
-        if (base_ty->tag != SN_T_NAMED || !base_ty->decl) {
+        int is_qdot = (e->op == SN_TOK_QDOT);
+        int is_opt_base = (base_ty->tag == SN_T_NAMED && base_ty->decl &&
+                           strcmp(base_ty->decl->name, "Option") == 0 && base_ty->nargs == 1);
+        if (is_qdot && !is_opt_base) {
+            sn_diag_emit(c->diag, SN_DIAG_WARNING, SNOVA_OPTIONAL_CHAINING_NON_OPTIONAL, e->span,
+                         "redundant optional chaining `?.` applied to non-optional type");
+        }
+        SnTypeRep *target_ty = (is_qdot && is_opt_base) ? base_ty->args[0] : base_ty;
+
+        if (target_ty->tag != SN_T_NAMED || !target_ty->decl) {
             /* Arrays, strings and scalars carry members that no .snova file
              * declares (`arr.len()`, `n.toString()`) — builtins.c owns them. */
-            SnTypeRep *bm = sn_builtin_member(c->types, c->intern, base_ty, mname);
+            SnTypeRep *bm = sn_builtin_member(c->types, c->intern, target_ty, mname);
             if (bm) {
+                if (is_qdot && is_opt_base && !is_error(bm)) {
+                    bm = sn_builtin_generic(c->types, c->intern, sn_intern_cstr(c->intern, "Option"), &bm, 1);
+                }
                 e->resolved_type = bm;
                 return NULL; /* intrinsic: no symbol — see the CALL case */
             }
@@ -483,14 +511,23 @@ static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
             e->resolved_type = sn_type_error(c->types);
             return NULL;
         }
-        SnSymbol *msym = lookup_member_with_inheritance(c, base_ty->decl->decl, mname);
+        SnSymbol *msym = lookup_member_with_inheritance(c, target_ty->decl->decl, mname);
         if (!msym) {
             sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNKNOWN_MEMBER, e->span,
-                        "Unknown member `%s` on `%s`", e->text, base_ty->decl->name);
+                        "Unknown member `%s` on `%s`", e->text, target_ty->decl->name);
             e->resolved_type = sn_type_error(c->types);
             return NULL;
         }
-        e->resolved_type = symbol_type(c, msym);
+        if (msym->decl && msym->decl->vis == SN_VIS_PRIVATE &&
+            c->enclosing_type != target_ty->decl->decl) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PRIVATE_ACCESS, e->span,
+                        "`%s` is private to `%s`", e->text, target_ty->decl->name);
+        }
+        SnTypeRep *mty = symbol_type(c, msym);
+        if (is_qdot && is_opt_base && !is_error(mty)) {
+            mty = sn_builtin_generic(c->types, c->intern, sn_intern_cstr(c->intern, "Option"), &mty, 1);
+        }
+        e->resolved_type = mty;
         return msym;
     }
     sn_check_expr(c, local, e);
@@ -532,6 +569,8 @@ static SnTypeRep *check_binary(SnChecker *c, SnExpr *e, SnTypeRep *lt, SnTypeRep
     case SN_TOK_AMP:
     case SN_TOK_PIPE:
     case SN_TOK_CARET:
+    case SN_TOK_SHL:
+    case SN_TOK_SHR:
         if (is_numeric(lt) && lt == rt) {
             return lt;
         }
@@ -556,6 +595,22 @@ static SnTypeRep *check_binary(SnChecker *c, SnExpr *e, SnTypeRep *lt, SnTypeRep
             return sn_type_bool(c->types);
         }
         break;
+    case SN_TOK_QQ: {
+        int is_opt = (lt->tag == SN_T_NAMED && lt->decl &&
+                      strcmp(lt->decl->name, "Option") == 0 && lt->nargs == 1);
+        if (!is_opt) {
+            sn_diag_emit(c->diag, SN_DIAG_WARNING, SNOVA_REDUNDANT_NULL_COALESCING, e->span,
+                         "redundant null-coalescing operator `??` applied to non-optional type");
+            return lt;
+        }
+        SnTypeRep *inner = lt->args[0];
+        if (rt != inner) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_MISMATCHED_FALLBACK, e->span,
+                         "null-coalescing fallback type mismatch: expected inner type of Option");
+            return sn_type_error(c->types);
+        }
+        return inner;
+    }
     default:
         break;
     }
@@ -665,6 +720,12 @@ static SnTypeRep *named_with_type_args(SnChecker *c, SnSymbol *type_sym,
                                        const SnExpr *call) {
     if (call->type_args.len == 0) {
         return sn_type_named(c->types, type_sym, NULL, 0);
+    }
+    if (type_sym->decl && call->type_args.len != type_sym->decl->generics.len) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_GENERIC_ARITY_MISMATCH, call->span,
+                    "`%s` expects %zu type argument(s), found %zu",
+                    type_sym->decl->name ? type_sym->decl->name : "<type>",
+                    type_sym->decl->generics.len, call->type_args.len);
     }
     SnTypeRep **args =
         (SnTypeRep **)sn_arena_alloc(c->arena, call->type_args.len * sizeof(SnTypeRep *));
@@ -1116,7 +1177,14 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
             }
             final_ty = declared;
         } else if (init_ty) {
-            final_ty = init_ty;
+            if (sn_type_is_any(init_ty)) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ANY_IMPLICITLY_INFERRED, s->span,
+                             "type `any` cannot be implicitly inferred for `%s`; add an explicit type annotation `let %s: any = ...`",
+                             s->name, s->name);
+                final_ty = sn_type_error(c->types);
+            } else {
+                final_ty = init_ty;
+            }
         } else {
             sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNTYPED_VARIABLE, s->span,
                         "variable '%s' has no determinable type; add an explicit type "
@@ -1185,7 +1253,9 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
             }
         }
         if (s->then_br) {
+            c->loop_depth++;
             sn_check_stmt(c, local, s->then_br);
+            c->loop_depth--;
         }
         break;
     }
@@ -1204,7 +1274,9 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
             }
         }
         if (s->then_br) {
+            c->loop_depth++;
             sn_check_stmt(c, &body_scope, s->then_br);
+            c->loop_depth--;
         }
         break;
     }
@@ -1214,7 +1286,16 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
         break;
 
     case SN_STMT_BREAK:
+        if (c->loop_depth == 0) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_BREAK_OUTSIDE_LOOP, s->span,
+                        "`break` used outside a loop");
+        }
+        break;
     case SN_STMT_CONTINUE:
+        if (c->loop_depth == 0) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_CONTINUE_OUTSIDE_LOOP, s->span,
+                        "`continue` used outside a loop");
+        }
         break;
 
     case SN_STMT_THROW:
@@ -1278,6 +1359,48 @@ void sn_check_block(SnChecker *c, SnScope *parent, SnStmt *block) {
     }
 }
 
+/* Conservative "does this statement guarantee a return/throw on every path"
+ * check, for SNOVA_MISSING_RETURN. Deliberately narrow: RETURN/THROW, a BLOCK
+ * whose last statement qualifies, and an IF whose branches both qualify.
+ * Everything else (loops, match/try as statements, ...) is treated as "not
+ * guaranteed" even when it may in fact always return — false negatives here
+ * only mean a real gap goes unflagged, which is the safe direction; a false
+ * positive would reject correct code. */
+static int stmt_always_returns(const SnStmt *s) {
+    if (!s) {
+        return 0;
+    }
+    switch (s->kind) {
+    case SN_STMT_RETURN:
+    case SN_STMT_THROW:
+        return 1;
+    case SN_STMT_BLOCK:
+        return s->stmts.len > 0 &&
+              stmt_always_returns(SN_LIST_AT(s->stmts, SnStmt, s->stmts.len - 1));
+    case SN_STMT_IF:
+        return s->else_br && stmt_always_returns(s->then_br) &&
+              stmt_always_returns(s->else_br);
+    case SN_STMT_MATCH:
+        /* Every arm has an explicit `-> return ...`/`-> throw ...` body — an
+         * arm written as a bare value (`0 -> "zero"`) is only a return in
+         * match-as-EXPRESSION position, which is a different AST node
+         * (SN_EXPR_MATCH); here it would be a statement whose value is
+         * discarded, so it does not count. */
+        if (s->arms.len == 0) {
+            return 0;
+        }
+        for (size_t i = 0; i < s->arms.len; i++) {
+            const SnMatchArm *arm = SN_LIST_AT(s->arms, SnMatchArm, i);
+            if (!arm->body || !stmt_always_returns(arm->body)) {
+                return 0;
+            }
+        }
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* Defines `owner`'s declared type parameters as SN_SYM_TYPE entries in
  * `scope`. A name already present (a method re-declaring its class's `T`)
  * keeps the first binding — shadowing here would only produce a second
@@ -1324,10 +1447,34 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
     }
 
     c->current_return_type = sn_check_resolve_type(c, decl->ret);
+    int is_layer3 = (c->current_package &&
+                     (strncmp(c->current_package, "builtin", 7) == 0 ||
+                      strncmp(c->current_package, "stdlib", 6) == 0));
+    if (decl->vis == SN_VIS_PUBLIC && is_layer3) {
+        if (c->current_return_type && sn_type_is_any(c->current_return_type)) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ANY_IN_PUBLIC_LIBRARY, decl->span,
+                         "public declaration `%s` in Layer 3 library cannot use `any` in its signature", decl->name ? decl->name : "<fn>");
+        }
+        for (size_t i = 0; i < decl->params.len; i++) {
+            SnParam *p = SN_LIST_AT(decl->params, SnParam, i);
+            SnTypeRep *pty = sn_check_resolve_type(c, p->type);
+            if (pty && sn_type_is_any(pty)) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ANY_IN_PUBLIC_LIBRARY, p->span,
+                             "public parameter `%s` in Layer 3 library cannot use `any` in its signature", p->name);
+            }
+        }
+    }
     c->in_constructor =
         decl->name && sn_intern_cstr(c->intern, decl->name) ==
                           sn_intern_cstr(c->intern, "constructor");
     sn_check_stmt(c, &params_scope, decl->body);
+    if (c->current_return_type && !is_error(c->current_return_type) &&
+        c->current_return_type->tag != SN_T_UNIT &&
+        !stmt_always_returns(decl->body)) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_MISSING_RETURN, decl->span,
+                    "`%s` is declared to return a value on every path but doesn't",
+                    decl->name ? decl->name : "<fn>");
+    }
     c->in_constructor = 0;
     c->current_return_type = NULL;
     c->type_params = NULL;

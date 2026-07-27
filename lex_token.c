@@ -16,6 +16,7 @@ static const Keyword KEYWORDS[] = {
     {"package", SN_TOK_PACKAGE},     {"import", SN_TOK_IMPORT},
     {"class", SN_TOK_CLASS},         {"struct", SN_TOK_STRUCT},
     {"enum", SN_TOK_ENUM},           {"interface", SN_TOK_INTERFACE},
+    {"trait", SN_TOK_INTERFACE},
     {"method", SN_TOK_METHOD},       {"func", SN_TOK_FUNC},
     {"static", SN_TOK_STATIC},       {"public", SN_TOK_PUBLIC},
     {"private", SN_TOK_PRIVATE},     {"protected", SN_TOK_PROTECTED},
@@ -92,6 +93,7 @@ const char *sn_tok_name(SnTokKind k) {
     case SN_TOK_AT: return "@";
     case SN_TOK_QUESTION: return "?";
     case SN_TOK_QQ: return "??";
+    case SN_TOK_QDOT: return "?.";
     case SN_TOK_COLONCOLON: return "::";
     case SN_TOK_UNDERSCORE: return "_";
     case SN_TOK_PLUS: return "+";
@@ -121,6 +123,8 @@ const char *sn_tok_name(SnTokKind k) {
     case SN_TOK_MINUS_EQ: return "-=";
     case SN_TOK_STAR_EQ: return "*=";
     case SN_TOK_SLASH_EQ: return "/=";
+    case SN_TOK_SHL: return "<<";
+    case SN_TOK_SHR: return ">>";
     default: return "token";
     }
 }

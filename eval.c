@@ -94,6 +94,10 @@ const char *to_string(Interp *in, Value v, SnSpan span) {
         if (v.as.vt->payload.len == 0) {
             return v.as.vt->name;
         }
+        if (v.as.vt->payload.len == 1 &&
+            (strcmp(v.as.vt->name, "Ok") == 0 || strcmp(v.as.vt->name, "Some") == 0)) {
+            return to_string(in, *(const Value *)v.as.vt->payload.items[0], span);
+        }
         const char *out = arena_sprintf(in, "%s(", v.as.vt->name);
         for (size_t i = 0; i < v.as.vt->payload.len; i++) {
             const Value *p = (const Value *)v.as.vt->payload.items[i];
@@ -106,6 +110,17 @@ const char *to_string(Interp *in, Value v, SnSpan span) {
     }
     case V_LAMBDA:
         return "<lambda>";
+    case V_ARRAY: {
+        const char *out = "[";
+        for (size_t i = 0; i < v.as.arr->items.len; i++) {
+            const Value *item = (const Value *)v.as.arr->items.items[i];
+            out = str_concat(in, out, to_string(in, *item, span));
+            if (i + 1 < v.as.arr->items.len) {
+                out = str_concat(in, out, ", ");
+            }
+        }
+        return str_concat(in, out, "]");
+    }
     }
     return "?";
 }

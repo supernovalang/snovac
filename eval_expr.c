@@ -91,6 +91,11 @@ static Value eval_binary(Interp *in, Env *env, const SnExpr *e) {
             return v_int(0);
         }
         return v_int(x % y);
+    case SN_TOK_AMP:    return v_int(x & y);
+    case SN_TOK_PIPE:   return v_int(x | y);
+    case SN_TOK_CARET:  return v_int(x ^ y);
+    case SN_TOK_SHL:    return v_int(x << y);
+    case SN_TOK_SHR:    return v_int(x >> y);
     case SN_TOK_LT: return v_bool(x < y);
     case SN_TOK_GT: return v_bool(x > y);
     case SN_TOK_LE: return v_bool(x <= y);
@@ -158,7 +163,7 @@ static Value make_variant_from_args(Interp *in, Env *env, const char *name,
 /* `Some` / `Ok` / `Err` are built-in variant constructors; any other
  * capitalized name is looked up among declared enums' variants so user enums
  * construct the same way. */
-static int is_variant_constructor(Interp *in, const char *name) {
+int is_variant_constructor(Interp *in, const char *name) {
     if (strcmp(name, "Some") == 0 || strcmp(name, "Ok") == 0 ||
         strcmp(name, "Err") == 0 || strcmp(name, "None") == 0) {
         return 1;
@@ -200,6 +205,35 @@ static Value call_lambda_with_value(Interp *in, const LambdaVal *lam,
         return r;
     }
     return v_unit();
+}
+
+static int try_string_method(Interp *in, Env *env, Value recv,
+                             const SnExpr *call, Value *out) {
+    (void)env;
+    const SnExpr *callee = call->lhs;
+    const char *m = callee->text;
+    const char *s = recv.as.s ? recv.as.s : "";
+    if (strcmp(m, "toUpper") == 0) {
+        size_t len = strlen(s);
+        char *buf = (char *)sn_arena_alloc(in->arena, len + 1);
+        for (size_t i = 0; i < len; i++) buf[i] = (char)toupper((unsigned char)s[i]);
+        buf[len] = '\0';
+        *out = v_str(buf);
+        return 1;
+    }
+    if (strcmp(m, "toLower") == 0) {
+        size_t len = strlen(s);
+        char *buf = (char *)sn_arena_alloc(in->arena, len + 1);
+        for (size_t i = 0; i < len; i++) buf[i] = (char)tolower((unsigned char)s[i]);
+        buf[len] = '\0';
+        *out = v_str(buf);
+        return 1;
+    }
+    if (strcmp(m, "len") == 0 || strcmp(m, "length") == 0) {
+        *out = v_int((long long)strlen(s));
+        return 1;
+    }
+    return 0;
 }
 
 /* Option/Result (and general variant) instance methods: the functional
@@ -378,7 +412,13 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
             }
         }
 
+
+
         Value recv = eval_expr(in, env, callee->lhs);
+        if (recv.kind == V_STRING && callee->text &&
+            try_string_method(in, env, recv, e, &out)) {
+            return out;
+        }
         if (recv.kind == V_VARIANT && callee->text &&
             try_variant_method(in, env, recv, e, &out)) {
             return out;
@@ -492,6 +532,28 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
         return v_unit();
     }
     case SN_EXPR_MEMBER: {
+        /* Enum variant access: `State.Done` where `State` is a declared enum
+         * type, not a local binding — mirrors the static-call check in
+         * eval_call() for the analogous `Foo.bar()` case. Must run before
+         * eval_expr(e->lhs) below: a bare type name is not itself an
+         * executable value. */
+        if (e->lhs->kind == SN_EXPR_IDENT && e->lhs->text && e->text &&
+            !env_lookup(env, e->lhs->text)) {
+            const SnDecl *en = find_top(in, e->lhs->text, SN_DECL_ENUM);
+            if (en) {
+                for (size_t i = 0; i < en->variants.len; i++) {
+                    const SnDecl *v = (const SnDecl *)en->variants.items[i];
+                    if (v->name && strcmp(v->name, e->text) == 0) {
+                        SnList empty = {0};
+                        return v_variant(in, v->name, empty);
+                    }
+                }
+                rt_error(in, SNOVA_UNDEFINED_NAME, e->span,
+                         "enum `%s` has no variant `%s`", e->lhs->text,
+                         e->text);
+                return v_unit();
+            }
+        }
         Value recv = eval_expr(in, env, e->lhs);
         if (recv.kind == V_OBJECT) {
             Value *f = object_field(recv.as.o, e->text);
@@ -586,6 +648,34 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
             (void)f;
         }
         return v_unit();
+    }
+    case SN_EXPR_INDEX: {
+        Value base = eval_expr(in, env, e->lhs);
+        if (base.kind != V_ARRAY) {
+            rt_error(in, SNOVA_TYPE_ERROR, e->span, "value is not indexable");
+            return v_unit();
+        }
+        long long idx = as_int(in, eval_expr(in, env, e->rhs), e->span);
+        if (idx < 0 || (size_t)idx >= base.as.arr->items.len) {
+            rt_error(in, SNOVA_TYPE_ERROR, e->span,
+                     "array index %lld out of bounds (len %zu)", idx,
+                     base.as.arr->items.len);
+            return v_unit();
+        }
+        return *(const Value *)base.as.arr->items.items[idx];
+    }
+    case SN_EXPR_ARRAY: {
+        ArrayVal *arr = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
+        for (size_t i = 0; i < e->args.len; i++) {
+            Value v = eval_expr(in, env, (const SnExpr *)e->args.items[i]);
+            Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
+            *slot = v;
+            sn_list_push(in->arena, &arr->items, slot);
+        }
+        Value v;
+        v.kind = V_ARRAY;
+        v.as.arr = arr;
+        return v;
     }
     default:
         rt_error(in, SNOVA_UNSUPPORTED, e->span,

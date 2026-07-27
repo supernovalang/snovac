@@ -15,6 +15,7 @@
 
 #include "eval.h"
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,12 +30,17 @@
 #define SNOVA_UNSUPPORTED        305
 
 typedef enum {
-    V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_OBJECT, V_VARIANT, V_LAMBDA
+    V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_OBJECT, V_VARIANT, V_LAMBDA, V_ARRAY
 } ValKind;
 
 typedef struct Object Object;
 typedef struct VariantVal VariantVal;
 typedef struct LambdaVal LambdaVal;
+typedef struct ArrayVal ArrayVal;
+
+struct ArrayVal {
+    SnList items; /* Value* */
+};
 
 typedef struct {
     ValKind kind;
@@ -46,6 +52,7 @@ typedef struct {
         Object *o;
         VariantVal *vt;
         LambdaVal *lam;
+        ArrayVal *arr;
     } as;
 } Value;
 
@@ -143,6 +150,10 @@ const SnMatchArm *match_select_arm(Interp *in, Env *env, const SnList *arms,
 long long as_int(Interp *in, Value v, SnSpan span);
 int truthy(Interp *in, Value v, SnSpan span);
 Value eval_expr(Interp *in, Env *env, const SnExpr *e);
+/* `Some`/`Ok`/`Err`/`None`, or a variant of a declared enum. Shared with
+ * pattern_match_bind(): a bare pattern name is only a wildcard bind when it
+ * is NOT one of these — see the parser's note in parse_pattern(). */
+int is_variant_constructor(Interp *in, const char *name);
 
 /* ── eval_stmt.c ──────────────────────────────────────────────────────────── */
 

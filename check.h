@@ -88,6 +88,20 @@
 #define SNOVA_RETURN_TYPE_MISMATCH 136
 #define SNOVA_NOT_CALLABLE 137
 #define SNOVA_LET_TYPE_MISMATCH 138
+#define SNOVA_BREAK_OUTSIDE_LOOP 139
+#define SNOVA_CONTINUE_OUTSIDE_LOOP 140
+#define SNOVA_ABSTRACT_INSTANTIATION 141
+#define SNOVA_MISSING_RETURN 142
+#define SNOVA_PRIVATE_ACCESS 143
+#define SNOVA_GENERIC_ARITY_MISMATCH 144
+
+#define SNOVA_OPTIONAL_TYPE_REQUIRED    200
+#define SNOVA_REDUNDANT_NULL_COALESCING 201
+#define SNOVA_MISMATCHED_FALLBACK       202
+#define SNOVA_OPTIONAL_CHAINING_NON_OPTIONAL 203
+#define SNOVA_NESTED_OPTIONAL           204
+#define SNOVA_ANY_IN_PUBLIC_LIBRARY     210
+#define SNOVA_ANY_IMPLICITLY_INFERRED   211
 
 /* Reused as-is — already fixture-backed with exactly this meaning. */
 #define SNOVA_UNKNOWN_MEMBER 28
@@ -121,6 +135,10 @@ typedef struct {
      * immutable everywhere else, but the constructor is where it receives its
      * value (`this.description = description`) — see is_mutable_symbol. */
     int in_constructor;
+
+    /* Nesting depth of `while`/`for` bodies being checked — 0 outside any
+     * loop. `break`/`continue` are only legal at depth > 0. */
+    int loop_depth;
 } SnChecker;
 
 void sn_checker_init(SnChecker *c, SnArena *a, SnInternTable *it, SnDiagSink *diag,

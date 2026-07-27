@@ -47,6 +47,16 @@ int pattern_match_bind(Interp *in, Env *env, const SnPattern *pat,
     case SN_PAT_WILDCARD:
         return 1;
     case SN_PAT_BINDING:
+        /* A bare pattern name is ambiguous until it's checked against
+         * declared variants (parse_pattern() in parse_type.c records it as
+         * BINDING and defers the call here). A payload-less variant name
+         * ("Draft", "None") must match by identity, not swallow every
+         * subject as a fresh local. */
+        if (is_variant_constructor(in, pat->name)) {
+            return subject.kind == V_VARIANT &&
+                  subject.as.vt->payload.len == 0 &&
+                  strcmp(subject.as.vt->name, pat->name) == 0;
+        }
         env_define(in, env, pat->name, subject);
         return 1;
     case SN_PAT_LITERAL: {
@@ -117,6 +127,43 @@ static Flow exec_match(Interp *in, Env *env, const SnStmt *s) {
     return FLOW_NORMAL;
 }
 
+static Flow exec_for(Interp *in, Env *env, const SnStmt *s) {
+    if (!s->expr) return FLOW_NORMAL;
+    Value iterable = eval_expr(in, env, s->expr);
+    if (in->failed) return FLOW_RETURN;
+
+    if (iterable.kind == V_INT) {
+        long long limit = iterable.as.i;
+        int guard = 0;
+        for (long long i = 0; i < limit && !in->failed; i++) {
+            Env *loop_env = env_new(in, env);
+            if (s->name) env_define(in, loop_env, s->name, v_int(i));
+            Flow f = exec_stmt(in, loop_env, s->then_br);
+            if (f == FLOW_RETURN) return f;
+            if (f == FLOW_BREAK) break;
+            if (++guard > SN_LOOP_GUARD) {
+                rt_error(in, SNOVA_UNSUPPORTED, s->span, "loop exceeded iteration guard");
+                break;
+            }
+        }
+    } else if (iterable.kind == V_ARRAY) {
+        int guard = 0;
+        for (size_t i = 0; i < iterable.as.arr->items.len && !in->failed; i++) {
+            Value *item = (Value *)iterable.as.arr->items.items[i];
+            Env *loop_env = env_new(in, env);
+            if (s->name) env_define(in, loop_env, s->name, *item);
+            Flow f = exec_stmt(in, loop_env, s->then_br);
+            if (f == FLOW_RETURN) return f;
+            if (f == FLOW_BREAK) break;
+            if (++guard > SN_LOOP_GUARD) {
+                rt_error(in, SNOVA_UNSUPPORTED, s->span, "loop exceeded iteration guard");
+                break;
+            }
+        }
+    }
+    return FLOW_NORMAL;
+}
+
 Flow exec_stmt(Interp *in, Env *env, const SnStmt *s) {
     if (!s || in->failed) {
         return in->failed ? FLOW_RETURN : FLOW_NORMAL;
@@ -148,6 +195,9 @@ Flow exec_stmt(Interp *in, Env *env, const SnStmt *s) {
 
     case SN_STMT_WHILE:
         return exec_while(in, env, s);
+
+    case SN_STMT_FOR:
+        return exec_for(in, env, s);
 
     case SN_STMT_MATCH:
         return exec_match(in, env, s);

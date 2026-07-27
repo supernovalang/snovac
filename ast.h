@@ -56,6 +56,7 @@ struct SnType {
     SnList args;      /* NAME: SnType* generic arguments */
     SnList params;    /* FUNC: SnType* parameter types */
     SnType *ret;      /* FUNC: return type */
+    uint8_t is_optional; /* T? optional syntax */
 };
 
 /* ── expressions ──────────────────────────────────────────────────────────── */
