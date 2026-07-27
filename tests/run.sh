@@ -159,20 +159,41 @@ EOF
 assert "project: genuinely missing import still reported" 1 \
   "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
 
-# `builtin.*` / `stdlib.*` may be supplied by the toolchain with no `.snova`
-# file anywhere snovac can see (builtin.http.Http is the standing example), so
-# absence there must not be reported as a missing package.
+# `builtin.*` / `stdlib.*` packages actually registered in
+# `compiler/src/lsp/NativePackages.snova` (and generated into
+# `builtin/native-packages.list` by `scripts/gen-packages.sh`) have no
+# `.snova` file anywhere snovac can see, so absence there must not be
+# reported as a missing package.
 cat > "$PROJ/src/app/Models.snova" <<'EOF'
 package app
 
-import builtin.http.Http.HttpServer
+import builtin.syntax.Syntax
 
 public struct Config {
     public let name: string
 }
 EOF
 
-assert "project: toolchain-provided namespace is not judged" 0 \
+assert "project: registered native package is not judged" 0 \
+  "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
+
+# `builtin.http.Http` is NOT in native-packages.list (no such package is
+# registered anywhere yet) and has no `.snova` file either — this used to be
+# silently accepted by a blanket `builtin.*`/`stdlib.*` prefix rule (the exact
+# gap `tests/conformance/` flagged as "missing_import não é rejeitado por
+# snovac check"). Fixed by sn_pkggraph_load_native_manifest(): only names
+# actually present in the manifest are treated as toolchain-provided now.
+cat > "$PROJ/src/app/Models.snova" <<'EOF'
+package app
+
+import builtin.http.Http
+
+public struct Config {
+    public let name: string
+}
+EOF
+
+assert "project: unregistered builtin.* namespace is still reported" 1 \
   "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

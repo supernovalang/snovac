@@ -79,7 +79,11 @@ static void usage(FILE *out) {
             "  snovac check --project --no-typecheck <path>\n"
             "                                       everything except body type\n"
             "                                       checking (P4 generics are not\n"
-            "                                       substituted yet)\n",
+            "                                       substituted yet)\n"
+            "  snovac run --project         <path>  parse + execute across every\n"
+            "                                       file in the project's own\n"
+            "                                       source root (P3 preview; no\n"
+            "                                       builtin/deps evaluation)\n",
             SNOVAC_VERSION);
 }
 
@@ -277,6 +281,7 @@ static size_t scan_project_roots(SnPackageGraph *graph, const SnProject *proj) {
     if (find_builtin_root_for_project(proj->source_root, builtin_dir,
                                       sizeof(builtin_dir))) {
         sn_pkggraph_scan_root(graph, builtin_dir);
+        sn_pkggraph_load_native_manifest(graph, builtin_dir);
     }
     return own;
 }
@@ -424,6 +429,7 @@ static int cmd_check(const char *path, int dump) {
     char builtin_dir[1024];
     if (find_builtin_root_for_project(dir, builtin_dir, sizeof(builtin_dir))) {
         sn_pkggraph_scan_root(&graph, builtin_dir);
+        sn_pkggraph_load_native_manifest(&graph, builtin_dir);
     }
     sn_pkggraph_link(&graph);
 
@@ -673,6 +679,72 @@ static int cmd_parse(const char *path, int dump) {
     return rc;
 }
 
+/* Project-wide `run`: merges every top-level declaration from every file
+ * under the project's own source root into one combined SnUnit before
+ * evaluating. eval.c's tree-walker (sn_eval_run/find_top) only ever looks
+ * a name up by scanning one SnUnit.decls list — see eval.h's own "Single-
+ * file only, by design" note — so this is a pure AST-level merge upstream
+ * of the evaluator; eval.c itself is untouched.
+ *
+ * Deliberately does NOT pull in `deps_root` or `builtin/`: intrinsics
+ * (Console.print/printline/...) are dispatched in eval_expr.c's
+ * try_intrinsic() by a literal receiver-name match, never by looking up a
+ * class declaration, so builtin/ source files are never needed to
+ * evaluate a program. Merging them in would only risk this P3-preview
+ * evaluator choking on a construct it doesn't support yet, inside a file
+ * `main` never even calls into.
+ */
+static int cmd_run_project(const char *path) {
+    SnProject proj;
+    project_discover(path, &proj);
+
+    SnArena arena;
+    sn_arena_init(&arena, 4 * 1024 * 1024);
+    SnInternTable intern;
+    sn_intern_init(&intern, &arena);
+    SnDiagSink diag;
+    sn_diag_init(&diag, path, "", 0);
+
+    SnPackageGraph graph;
+    sn_pkggraph_init(&graph, &arena, &intern, &diag);
+    sn_pkggraph_scan_root(&graph, proj.source_root);
+
+    SnUnit merged;
+    memset(&merged, 0, sizeof(merged));
+
+    for (SnPackageNode *node = graph.nodes; node; node = node->next) {
+        for (SnPackageFile *pf = node->files; pf; pf = pf->next) {
+            SnDiagFile self = {pf->path, pf->src, pf->src_len};
+            SnDiagFile outer = sn_diag_set_file(&diag, self);
+
+            SnTokenVec toks;
+            sn_lex(&arena, &diag, pf->src, pf->src_len, &toks);
+
+            SnUnit unit;
+            sn_parse(&arena, &diag, &toks, &unit);
+
+            for (size_t i = 0; i < unit.decls.len; i++) {
+                sn_list_push(&arena, &merged.decls, unit.decls.items[i]);
+            }
+
+            sn_diag_set_file(&diag, outer);
+        }
+    }
+
+    int rc;
+    if (diag.error_count > 0) {
+        report_errors(&diag, path);
+        rc = 1;
+    } else {
+        sn_eval_merge_extensions(&arena, &merged);
+        int code = sn_eval_run(&arena, &diag, &merged);
+        rc = (code < 0) ? 1 : code;
+    }
+
+    sn_arena_free(&arena);
+    return rc;
+}
+
 static int cmd_run(const char *path) {
     size_t len = 0;
     char *src = read_file(path, &len);
@@ -746,6 +818,17 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
         usage(stdout);
         return 0;
+    }
+
+    /* `run --project <path>`: the project-wide form of `run`. Handled
+     * before the table for the same reason as `check --project` below. */
+    if (strcmp(argv[1], "run") == 0 && argc > 2 &&
+        strcmp(argv[2], "--project") == 0) {
+        if (argc <= 3) {
+            fprintf(stderr, "error: run --project needs a path\n");
+            return 2;
+        }
+        return cmd_run_project(argv[3]);
     }
 
     /* `check --project <path>`: the project-wide form of `check`. Handled
