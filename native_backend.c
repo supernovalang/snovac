@@ -476,13 +476,30 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
 
   fclose(f);
 
+  /* Locate the runtime static lib + headers next to the running binary,
+   * trying every layout snovac can plausibly be found in:
+   *   - installed:    <prefix>/bin/snovac, <prefix>/lib/libsnovart.a,
+   *                   <prefix>/include/ (see "make install")
+   *   - dev build:    snovac/build/snovac, snovac/build/libsnovart.a,
+   *                   headers directly under snovac/
+   *   - cwd fallback: used only if g_exe_dir could not be determined at all
+   *                   (see sn_set_exe_dir in driver_utils.c). */
   char inc_dir[1024];
   char lib_path[1024];
+
   if (g_exe_dir[0]) {
-    snprintf(inc_dir, sizeof(inc_dir), "%s/..", g_exe_dir);
-    snprintf(lib_path, sizeof(lib_path), "%s/libsnovart.a", g_exe_dir);
-    if (!path_is_file(lib_path)) {
-      snprintf(lib_path, sizeof(lib_path), "%s/build/libsnovart.a", inc_dir);
+    /* Installed layout. */
+    snprintf(inc_dir, sizeof(inc_dir), "%s/../include", g_exe_dir);
+    snprintf(lib_path, sizeof(lib_path), "%s/../lib/libsnovart.a", g_exe_dir);
+
+    if (!path_is_file(lib_path) || !path_is_dir(inc_dir)) {
+      /* Dev build layout: exe sits in snovac/build/, with headers directly
+       * under snovac/ and the lib at snovac/build/libsnovart.a. */
+      snprintf(inc_dir, sizeof(inc_dir), "%s/..", g_exe_dir);
+      snprintf(lib_path, sizeof(lib_path), "%s/libsnovart.a", g_exe_dir);
+      if (!path_is_file(lib_path)) {
+        snprintf(lib_path, sizeof(lib_path), "%s/build/libsnovart.a", inc_dir);
+      }
     }
   } else {
     snprintf(inc_dir, sizeof(inc_dir), ".");

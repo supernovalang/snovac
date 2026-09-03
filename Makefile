@@ -11,7 +11,18 @@ CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
            -Wmissing-prototypes -Wconversion -Wno-sign-conversion
 BUILD   ?= build
-BIN      = $(BUILD)/snovac
+
+# OS detection for `install`/`uninstall`: native Windows `make` (and
+# MSYS2/Git Bash, which still inherit OS=Windows_NT from the environment)
+# need a .exe suffix and a PowerShell-based PATH setup instead of the
+# POSIX shell one used for Linux/macOS.
+ifeq ($(OS),Windows_NT)
+  EXE := .exe
+else
+  EXE :=
+endif
+
+BIN      = $(BUILD)/snovac$(EXE)
 
 SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd_build.c cmd_tidy.c \
        target.c native_backend.c pulsar.c async.c \
@@ -58,9 +69,21 @@ RT_SRCS = driver_utils.c project.c target.c native_backend.c pulsar.c async.c \
 RT_OBJS = $(addprefix $(BUILD)/,$(RT_SRCS:.c=.o))
 LIB_RT  = $(BUILD)/libsnovart.a
 
-# Default install prefix (~/.snova or /usr/local)
-PREFIX  ?= $(HOME)/.snova
+# Default install prefix (~/.snova on Unix, %USERPROFILE%/.snova on Windows)
+ifeq ($(OS),Windows_NT)
+  PREFIX  ?= $(USERPROFILE)/.snova
+else
+  PREFIX  ?= $(HOME)/.snova
+endif
 BINDIR  ?= $(PREFIX)/bin
+LIBDIR  ?= $(PREFIX)/lib
+INCDIR  ?= $(PREFIX)/include
+
+# snova-std lives as a sibling directory of snovac/ in the repo. It's
+# optional: if it isn't checked out, install just skips it (SNOVA_STD_DIR
+# or the project's own .snovalang/deps can supply it another way).
+STD_SRC_DIR := ../snova-std/src
+STD_INSTALL_DIR ?= $(HOME)/.snovalang/std/src
 
 .PHONY: all clean test unit conformance install uninstall
 
@@ -72,20 +95,41 @@ $(BIN): $(OBJS)
 $(LIB_RT): $(RT_OBJS)
 	ar rcs $@ $(RT_OBJS)
 
+# Installs the snovac binary into BINDIR, its runtime static lib + headers
+# (needed by `snovac build --runtime`, which shells out to $(CC) again at
+# run time) into LIBDIR/INCDIR, snova-std (if present) into
+# STD_INSTALL_DIR, and wires BINDIR onto PATH for every common shell:
+#   - bash   (~/.bashrc and ~/.bash_profile)
+#   - zsh    (~/.zshrc)
+#   - fish   (~/.config/fish/config.fish)
+#   - PowerShell (User PATH env var + $PROFILE), on Windows
+# Each is idempotent, so re-running `make install` is safe.
 install: $(BIN) $(LIB_RT)
-	@mkdir -p $(BINDIR)
-	install -m 755 $(BIN) $(BINDIR)/snovac
-	@echo "✓ Installed snovac CLI to $(BINDIR)/snovac"
-	@if ! echo "$$PATH" | grep -q "$(BINDIR)"; then \
-		echo ""; \
-		echo "To use 'snovac' directly in your terminal, ensure $(BINDIR) is in your PATH:"; \
-		echo "  export PATH=\"\$$PATH:$(BINDIR)\""; \
-		echo ""; \
+	@mkdir -p $(BINDIR) $(LIBDIR) $(INCDIR)
+	install -m 755 $(BIN) $(BINDIR)/snovac$(EXE)
+	@echo "✓ Installed snovac CLI to $(BINDIR)/snovac$(EXE)"
+	install -m 644 $(LIB_RT) $(LIBDIR)/libsnovart.a
+	install -m 644 *.h $(INCDIR)/
+	@echo "✓ Installed runtime lib + headers to $(LIBDIR), $(INCDIR)"
+	@if [ -d $(STD_SRC_DIR) ]; then \
+		mkdir -p "$(STD_INSTALL_DIR)"; \
+		cp -R $(STD_SRC_DIR)/. "$(STD_INSTALL_DIR)/"; \
+		echo "✓ Installed snova-std to $(STD_INSTALL_DIR)"; \
 	fi
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install_path.ps1 -BinDir "$(BINDIR)"
+else
+	@sh scripts/install_path.sh "$(BINDIR)"
+endif
 
 uninstall:
-	rm -f $(BINDIR)/snovac
-	@echo "✓ Removed snovac from $(BINDIR)/snovac"
+	rm -f $(BINDIR)/snovac$(EXE)
+	rm -f $(LIBDIR)/libsnovart.a
+	rm -f $(addprefix $(INCDIR)/,$(notdir $(wildcard *.h)))
+	@echo "✓ Removed snovac from $(BINDIR)/snovac$(EXE) (and its runtime lib/headers)"
+	@echo "Note: PATH entries added by 'make install' in shell rc files /"
+	@echo "the PowerShell profile are left untouched; remove them manually if desired."
+	@echo "Note: snova-std installed to $(STD_INSTALL_DIR) is left untouched."
 
 $(BUILD)/%.o: %.c | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<
