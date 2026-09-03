@@ -9,12 +9,12 @@ The official, reference compiler for **Snovalang** written in pure, zero-depende
 Install `snovac` instantly on macOS or Linux with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
 ```
 
 Or using `wget`:
 ```bash
-wget -qO- https://raw.githubusercontent.com/supernovalang/snovac/main/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
 ```
 
 ## Features

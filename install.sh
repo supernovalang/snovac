@@ -3,7 +3,7 @@ set -e
 
 # ==============================================================================
 # Snovalang Compiler (snovac) Universal One-Line Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
 # ==============================================================================
 
 REPO="supernovalang/snovac"
