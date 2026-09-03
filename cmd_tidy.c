@@ -27,6 +27,9 @@ typedef struct {
 } KnownModule;
 
 static const KnownModule KNOWN_MODULES[] = {
+    {"Snova.Std.Network.Http",   "github.com/supernovalang/snova-http",          "1.0.0"},
+    {"Snova.Std.Network.Tcp",    "github.com/supernovalang/snova-http",          "1.0.0"},
+    {"Snova.Std.Network",        "github.com/supernovalang/snova-http",          "1.0.0"},
     {"Snova.Std.Http",          "github.com/supernovalang/snova-http",          "1.0.0"},
     {"Snova.Std.Server",        "github.com/supernovalang/snova-http",          "1.0.0"},
     {"Snova.Std.Collections",   "github.com/supernovalang/snova-collections",   "1.0.0"},

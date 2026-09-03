@@ -408,7 +408,9 @@ size_t sn_pkggraph_scan_root_fallback(SnPackageGraph *g, const char *root) {
                 const char *interned = sn_intern_cstr(g->intern, pname);
                 SnPackageNode *existing = sn_pkggraph_find(g, interned);
                 if (existing && existing->files) {
-                    continue;
+                    if (strncmp(existing->files->path, root, strlen(root)) != 0) {
+                        continue;
+                    }
                 }
             }
         }
