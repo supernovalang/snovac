@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
     }
 
     if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0) {
-        printf("snovac %s\n", SNOVAC_VERSION);
+        printf("sncli %s\n", SNOVAC_VERSION);
         return 0;
     }
     if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {

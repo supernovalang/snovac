@@ -1740,8 +1740,51 @@ static void define_type_params(SnChecker *c, SnScope *scope, const SnDecl *owner
 }
 
 void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
+    int has_native = 0;
+    for (size_t i = 0; i < decl->decorators.len; i++) {
+        SnDecorator *dec = SN_LIST_AT(decl->decorators, SnDecorator, i);
+        if (dec && dec->name && (strcmp(dec->name, "Native") == 0 || strcmp(dec->name, "native") == 0)) {
+            has_native = 1;
+            break;
+        }
+    }
+    if (c->enclosing_type) {
+        for (size_t i = 0; i < c->enclosing_type->decorators.len; i++) {
+            SnDecorator *dec = SN_LIST_AT(c->enclosing_type->decorators, SnDecorator, i);
+            if (dec && dec->name && (strcmp(dec->name, "Native") == 0 || strcmp(dec->name, "native") == 0)) {
+                has_native = 1;
+                break;
+            }
+        }
+    }
+
+    if (has_native) {
+        const char *owner_name = c->enclosing_type ? c->enclosing_type->name : decl->name;
+        int is_permitted = 0;
+        if (owner_name) {
+            if (strcmp(owner_name, "NativeNetwork") == 0 ||
+                strcmp(owner_name, "NativeIO") == 0 ||
+                strcmp(owner_name, "NativeMemory") == 0 ||
+                strcmp(owner_name, "NativeThread") == 0 ||
+                strcmp(owner_name, "NativeMutex") == 0 ||
+                strcmp(owner_name, "NativeProcess") == 0 ||
+                strcmp(owner_name, "NativeTime") == 0 ||
+                strcmp(owner_name, "NativeAsyncIO") == 0 ||
+                strcmp(owner_name, "NativeSocket") == 0 ||
+                strcmp(owner_name, "Socket") == 0) {
+                is_permitted = 1;
+            }
+        }
+        if (!is_permitted) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PROHIBITED_NATIVE, decl->span,
+                         "architectural violation: '@Native()' is prohibited on '%s'. Native functions SHALL only be used at the runtime/OS boundary. Implement this in pure Snova.",
+                         owner_name ? owner_name : "<unknown>");
+            return;
+        }
+    }
+
     if (!decl->body) {
-        return; /* bare signature or @native — accepted; P5's problem */
+        return; /* bare signature or @native on permitted boundary */
     }
     if (decl->kind != SN_DECL_FUNC && decl->kind != SN_DECL_METHOD) {
         return;

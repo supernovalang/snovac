@@ -129,6 +129,8 @@ Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
                     Object *self, SnSpan span);
 Value call_method(Interp *in, Object *self, const SnDecl *m, SnList *args,
                   Env *caller, SnSpan span);
+int sn_native_try_dispatch(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
+                           Object *self, SnSpan span, Value *out);
 
 /* ── variants, lambdas and pattern matching ───────────────────────────────── */
 

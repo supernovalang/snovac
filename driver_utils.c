@@ -229,9 +229,31 @@ void report_errors(const SnDiagSink *diag, const char *path) {
 }
 
 int find_builtin_root(const char *start_dir, char *out, size_t out_sz) {
+  const char *env_std = getenv("SNOVA_STD_PATH");
+  if (env_std && env_std[0] && path_is_dir(env_std)) {
+    snprintf(out, out_sz, "%s", env_std);
+    return 1;
+  }
+
   char cur[SNOVAC_PATH_MAX + 64];
   snprintf(cur, sizeof(cur), "%s", start_dir);
   for (int i = 0; i < 8; i++) {
+    char candidate_std[SNOVAC_PATH_MAX + 128];
+    snprintf(candidate_std, sizeof(candidate_std), "%s/snova-std/src", cur);
+    if (path_is_dir(candidate_std)) {
+      snprintf(out, out_sz, "%s", candidate_std);
+      return 1;
+    }
+
+    char candidate_std_direct[SNOVAC_PATH_MAX + 128];
+    snprintf(candidate_std_direct, sizeof(candidate_std_direct), "%s/src", cur);
+    char test_file[SNOVAC_PATH_MAX + 160];
+    snprintf(test_file, sizeof(test_file), "%s/Snova/Std", candidate_std_direct);
+    if (path_is_dir(test_file)) {
+      snprintf(out, out_sz, "%s", candidate_std_direct);
+      return 1;
+    }
+
     char candidate[SNOVAC_PATH_MAX + 128];
     snprintf(candidate, sizeof(candidate), "%s/builtin", cur);
     struct stat st;
@@ -243,6 +265,22 @@ int find_builtin_root(const char *start_dir, char *out, size_t out_sz) {
     snprintf(parent, sizeof(parent), "%s/..", cur);
     snprintf(cur, sizeof(cur), "%s", parent);
   }
+
+  /* User profile fallback */
+#if defined(_WIN32)
+  const char *home = getenv("USERPROFILE");
+#else
+  const char *home = getenv("HOME");
+#endif
+  if (home && home[0]) {
+    char installed_std[SNOVAC_PATH_MAX + 128];
+    snprintf(installed_std, sizeof(installed_std), "%s/.snovalang/std/src", home);
+    if (path_is_dir(installed_std)) {
+      snprintf(out, out_sz, "%s", installed_std);
+      return 1;
+    }
+  }
+
   return 0;
 }
 

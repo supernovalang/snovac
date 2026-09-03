@@ -250,6 +250,20 @@ static int try_array_method(Interp *in, Env *env, Value recv,
         }
         return 1;
     }
+    if (strcmp(m, "get") == 0) {
+        if (call->args.len > 0) {
+            long long idx = as_int(in, eval_expr(in, env, (const SnExpr *)call->args.items[0]), call->span);
+            if (idx >= 0 && (size_t)idx < recv.as.arr->items.len) {
+                Value *elem = (Value *)recv.as.arr->items.items[idx];
+                *out = *elem;
+            } else {
+                *out = v_unit();
+            }
+        } else {
+            *out = v_unit();
+        }
+        return 1;
+    }
     if (strcmp(m, "clear") == 0) {
         recv.as.arr->items.len = 0;
         *out = v_int(0);
@@ -327,6 +341,21 @@ static int try_string_method(Interp *in, Env *env, Value recv,
             *out = v_bool(strstr(s, sub) != NULL);
         } else {
             *out = v_bool(0);
+        }
+        return 1;
+    }
+    if (strcmp(m, "indexOf") == 0) {
+        if (call->args.len > 0) {
+            Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            const char *sub = (arg.kind == V_STRING && arg.as.s) ? arg.as.s : "";
+            char *p = strstr((char *)s, sub);
+            if (p) {
+                *out = v_int((long long)(p - s));
+            } else {
+                *out = v_int(-1);
+            }
+        } else {
+            *out = v_int(-1);
         }
         return 1;
     }
@@ -547,6 +576,12 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
         if (fn) {
             return call_function(in, fn, (SnList *)&e->args, env, NULL, e->span);
         }
+        if (strcmp(callee->text, "Array") == 0) {
+            Value v;
+            v.kind = V_ARRAY;
+            v.as.arr = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
+            return v;
+        }
         const SnDecl *cls = find_type(in, callee->text);
         if (cls) {
             Value v;
@@ -572,6 +607,12 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
          * recognize it as one. */
         if (callee->lhs->kind == SN_EXPR_IDENT && callee->lhs->text &&
             !env_lookup(env, callee->lhs->text)) {
+            if (strcmp(callee->lhs->text, "Array") == 0) {
+                Value v;
+                v.kind = V_ARRAY;
+                v.as.arr = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
+                return v;
+            }
             const SnDecl *cls = find_type(in, callee->lhs->text);
             if (cls) {
                 const SnDecl *m = find_member_inherited(in, cls, callee->text);

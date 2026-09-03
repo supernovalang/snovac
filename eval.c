@@ -296,6 +296,11 @@ Value *object_field(Object *o, const char *name) {
 
 Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
                     Object *self, SnSpan span) {
+    Value out_native;
+    if (sn_native_try_dispatch(in, fn, args, caller, self, span, &out_native)) {
+        return out_native;
+    }
+
     if (!fn->body) {
         rt_error(in, SNOVA_UNKNOWN_INTRINSIC, span,
                  "`%s` has no body and its @native intrinsic is not implemented yet",

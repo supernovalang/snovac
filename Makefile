@@ -18,11 +18,13 @@ BUILD   ?= build
 # POSIX shell one used for Linux/macOS.
 ifeq ($(OS),Windows_NT)
   EXE := .exe
+  EXTRA_LIBS := -lws2_32
 else
   EXE :=
+  EXTRA_LIBS := -lpthread
 endif
 
-BIN      = $(BUILD)/snovac$(EXE)
+BIN      = $(BUILD)/sncli$(EXE)
 
 SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd_build.c cmd_tidy.c cmd_get.c \
        target.c native_backend.c pulsar.c async.c \
@@ -31,6 +33,7 @@ SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd
        parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
        parse_decl.c parse_decl_parts.c \
        eval.c eval_expr.c eval_stmt.c eval_string.c \
+       socket_abi.c native_dispatch.c \
        diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
        snbc.c value.c vm.c emit_bc.c link_append.c
 OBJS = $(addprefix $(BUILD)/,$(SRCS:.c=.o))
@@ -64,6 +67,7 @@ RT_SRCS = driver_utils.c project.c target.c native_backend.c pulsar.c async.c \
           parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
           parse_decl.c parse_decl_parts.c \
           eval.c eval_expr.c eval_stmt.c eval_string.c \
+          socket_abi.c native_dispatch.c \
           diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
           snbc.c value.c vm.c emit_bc.c link_append.c
 RT_OBJS = $(addprefix $(BUILD)/,$(RT_SRCS:.c=.o))
@@ -90,7 +94,12 @@ STD_INSTALL_DIR ?= $(HOME)/.snovalang/std/src
 all: $(BIN) $(LIB_RT)
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(EXTRA_LIBS)
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item '$@' '$(BUILD)/snovac$(EXE)' -Force"
+else
+	@cp $@ $(BUILD)/snovac$(EXE) 2>/dev/null || true
+endif
 
 $(LIB_RT): $(RT_OBJS)
 	ar rcs $@ $(RT_OBJS)

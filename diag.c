@@ -20,6 +20,13 @@ void sn_diag_init(SnDiagSink *d, const char *path, const char *src, size_t len) 
     d->quiet = 0;
     d->out = stderr;
     d->use_color = sn_isatty(2) && !getenv("NO_COLOR");
+    d->cb = NULL;
+    d->cb_ctx = NULL;
+}
+
+void sn_diag_set_callback(SnDiagSink *d, SnDiagCallback cb, void *ctx) {
+    d->cb = cb;
+    d->cb_ctx = ctx;
 }
 
 SnDiagFile sn_diag_set_file(SnDiagSink *d, SnDiagFile file) {
@@ -70,6 +77,15 @@ void sn_diag_emit(SnDiagSink *d, SnDiagLevel level, int code, SnSpan span,
     va_start(ap, fmt);
     vfprintf(d->out, fmt, ap);
     va_end(ap);
+
+    if (d->cb) {
+        char msg_buf[1024];
+        va_list ap2;
+        va_start(ap2, fmt);
+        vsnprintf(msg_buf, sizeof(msg_buf), fmt, ap2);
+        va_end(ap2);
+        d->cb(d->cb_ctx, level, code, span, msg_buf, d->file.path);
+    }
 
     fprintf(d->out, "\n %s--> %s:%u:%u%s\n", col_dim, d->file.path, span.line,
             span.col, col_off);

@@ -23,6 +23,10 @@ typedef enum {
 #define SNOVA_INVALID_ESCAPE        5
 #define SNOVA_UNTERMINATED_INTERP   6
 
+typedef void (*SnDiagCallback)(void *ctx, SnDiagLevel level, int code,
+                               SnSpan span, const char *message,
+                               const char *file_path);
+
 /* The file a diagnostic's span is measured against. A single compilation
  * spans many files (the package graph pulls in every builtin), so the sink's
  * current file has to follow whichever file the phase is working on — one
@@ -45,9 +49,12 @@ typedef struct {
      * that declaration's own to report, in its own file and scope. */
     int quiet;
     FILE *out;
+    SnDiagCallback cb;
+    void *cb_ctx;
 } SnDiagSink;
 
 void sn_diag_init(SnDiagSink *d, const char *path, const char *src, size_t len);
+void sn_diag_set_callback(SnDiagSink *d, SnDiagCallback cb, void *ctx);
 
 /* Points the sink at `file` for every subsequent diagnostic and returns the
  * previous one, so a caller can restore it with a second call. `path` and

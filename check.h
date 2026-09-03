@@ -112,6 +112,7 @@
 #define SNOVA_NON_EXHAUSTIVE_MATCH      205
 #define SNOVA_ANY_IN_PUBLIC_LIBRARY     210
 #define SNOVA_ANY_IMPLICITLY_INFERRED   211
+#define SNOVA_PROHIBITED_NATIVE         220
 
 /* Reused as-is — already fixture-backed with exactly this meaning. */
 #define SNOVA_UNKNOWN_MEMBER 28

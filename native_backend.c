@@ -494,23 +494,36 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
   char inc_dir[1024];
   char lib_path[1024];
 
-  if (g_exe_dir[0]) {
-    /* Installed layout. */
-    snprintf(inc_dir, sizeof(inc_dir), "%s/../include", g_exe_dir);
-    snprintf(lib_path, sizeof(lib_path), "%s/../lib/libsnovart.a", g_exe_dir);
+  const char *env_home = getenv("SNOVA_HOME");
+  if (env_home && env_home[0]) {
+    snprintf(inc_dir, sizeof(inc_dir), "%s/include", env_home);
+    snprintf(lib_path, sizeof(lib_path), "%s/lib/libsnovart.a", env_home);
+  } else if (g_exe_dir[0]) {
+    /* Check sibling snovart directory first for local development */
+    snprintf(inc_dir, sizeof(inc_dir), "%s/../../snovart/include", g_exe_dir);
+    snprintf(lib_path, sizeof(lib_path), "%s/../../snovart/build/libsnovart.a", g_exe_dir);
 
     if (!path_is_file(lib_path) || !path_is_dir(inc_dir)) {
-      /* Dev build layout: exe sits in snovac/build/, with headers directly
-       * under snovac/ and the lib at snovac/build/libsnovart.a. */
-      snprintf(inc_dir, sizeof(inc_dir), "%s/..", g_exe_dir);
-      snprintf(lib_path, sizeof(lib_path), "%s/libsnovart.a", g_exe_dir);
-      if (!path_is_file(lib_path)) {
-        snprintf(lib_path, sizeof(lib_path), "%s/build/libsnovart.a", inc_dir);
+      /* Installed layout: <prefix>/bin/snovac -> <prefix>/include, <prefix>/lib/libsnovart.a */
+      snprintf(inc_dir, sizeof(inc_dir), "%s/../include", g_exe_dir);
+      snprintf(lib_path, sizeof(lib_path), "%s/../lib/libsnovart.a", g_exe_dir);
+
+      if (!path_is_file(lib_path) || !path_is_dir(inc_dir)) {
+        /* Dev build layout: exe sits in snovac/build/ */
+        snprintf(inc_dir, sizeof(inc_dir), "%s/..", g_exe_dir);
+        snprintf(lib_path, sizeof(lib_path), "%s/libsnovart.a", g_exe_dir);
+        if (!path_is_file(lib_path)) {
+          snprintf(lib_path, sizeof(lib_path), "%s/build/libsnovart.a", inc_dir);
+        }
       }
     }
   } else {
-    snprintf(inc_dir, sizeof(inc_dir), ".");
-    snprintf(lib_path, sizeof(lib_path), "build/libsnovart.a");
+    snprintf(inc_dir, sizeof(inc_dir), "../snovart/include");
+    snprintf(lib_path, sizeof(lib_path), "../snovart/build/libsnovart.a");
+    if (!path_is_file(lib_path)) {
+      snprintf(inc_dir, sizeof(inc_dir), ".");
+      snprintf(lib_path, sizeof(lib_path), "build/libsnovart.a");
+    }
   }
 
   char cmd[4096];
