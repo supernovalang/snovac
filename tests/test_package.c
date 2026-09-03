@@ -243,6 +243,25 @@ static void test_missing_package_decl(SnInternTable *it, SnArena *a, const char 
     CHECK("no-package: contributes no file", g.file_count == 0);
 }
 
+static void test_sno_script_file(SnInternTable *it, SnArena *a, const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/sno_script", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "script.sno", "func runScript(): int { return 42; }\n");
+    write_file(dir, "mod.sno", "module test.mod\n");
+
+    SnDiagSink diag;
+    sn_diag_init(&diag, "<test>", "", 0);
+    SnPackageGraph g;
+    sn_pkggraph_init(&g, a, it, &diag);
+    size_t found = sn_pkggraph_scan_root(&g, dir);
+
+    CHECK("sno-script: scans .sno and ignores mod.sno as source file", found == 1);
+    CHECK("sno-script: reports no missing package diagnostic", diag.error_count == 0);
+    CHECK("sno-script: assigned to main package", g.node_count == 1);
+    CHECK("sno-script: main package node exists", sn_pkggraph_find(&g, sn_intern_cstr(it, "main")) != NULL);
+}
+
 /* ── real corpus (report-only, see the file header for why) ────────────── */
 
 static void report_real_corpus(SnInternTable *it, SnArena *a) {
@@ -295,6 +314,7 @@ int main(void) {
     test_same_package_self_import_is_legal(&it, &arena, tmp);
     test_multi_section_file(&it, &arena, tmp);
     test_missing_package_decl(&it, &arena, tmp);
+    test_sno_script_file(&it, &arena, tmp);
     report_real_corpus(&it, &arena);
 
     sn_arena_free(&arena);

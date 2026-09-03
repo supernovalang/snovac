@@ -237,6 +237,13 @@ static void collect_member(SnResolver *r, SnScope *member_scope, const SnDecl *o
 
     SnSymbol *msym = define_with_origin(r, member_scope, mname, msk, m, m->span);
     if (!msym) {
+        SnSymbol *existing_m = sn_scope_lookup_local(member_scope, mname);
+        if (existing_m && existing_m->kind == msk &&
+            existing_m->origin && r->current_origin &&
+            existing_m->origin->path && r->current_origin->path &&
+            strcmp(existing_m->origin->path, r->current_origin->path) != 0) {
+            return;
+        }
         if (via_extension) {
             sn_diag_emit(r->diag, SN_DIAG_ERROR, SNOVA_DUPLICATE_DECL, m->span,
                          "`%s` is already declared in `%s` (via extension)",
@@ -355,6 +362,14 @@ size_t sn_resolver_collect(SnResolver *r) {
                 const char *name = sn_intern_cstr(r->intern, d->name);
                 SnSymbol *sym = define_with_origin(r, pkg_scope, name, sk, d, d->span);
                 if (!sym) {
+                    SnSymbol *existing = sn_scope_lookup_local(pkg_scope, name);
+                    if (existing && existing->kind == sk &&
+                        existing->decl && d && existing->decl->kind == d->kind &&
+                        existing->origin && origin && existing->origin->path && origin->path &&
+                        strcmp(existing->origin->path, origin->path) != 0) {
+                        /* Duplicate identical declaration from redundant dependency roots; reuse existing */
+                        continue;
+                    }
                     sn_diag_emit(r->diag, SN_DIAG_ERROR, SNOVA_DUPLICATE_DECL,
                                  d->span, "`%s` is already declared in package `%s`",
                                  d->name, node->name);

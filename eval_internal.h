@@ -89,6 +89,7 @@ typedef struct {
     SnArena *arena;
     SnDiagSink *diag;
     const SnUnit *unit;
+    Env *globals;
     Value ret;
     Flow flow;
     int failed;
@@ -115,6 +116,7 @@ char *str_concat(Interp *in, const char *a, const char *b);
 const char *to_string(Interp *in, Value v, SnSpan span);
 
 const SnDecl *find_member(const SnDecl *cls, const char *name);
+const SnDecl *find_member_inherited(const Interp *in, const SnDecl *cls, const char *name);
 const SnDecl *find_top(const Interp *in, const char *name, SnDeclKind k);
 const SnDecl *find_type(const Interp *in, const char *name);
 

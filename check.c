@@ -1772,7 +1772,20 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
         }
     }
 
-    c->current_return_type = sn_check_resolve_type(c, decl->ret);
+    int is_new_constructor = (decl->name && strcmp(decl->name, "new") == 0 && c->enclosing_type != NULL);
+    if (is_new_constructor) {
+        SnSymbol *self_sym = find_type_symbol_for_decl(c->resolver, c->enclosing_type);
+        SnTypeRep *self_ty = self_sym ? sn_type_named(c->types, self_sym, NULL, 0) : sn_type_error(c->types);
+        SnSymbol *this_sym = sn_scope_define(&params_scope, sn_intern_cstr(c->intern, "this"),
+                                             SN_SYM_PARAM, NULL, decl->span);
+        if (this_sym) {
+            this_sym->value_type = self_ty;
+            this_sym->is_mutable = 0;
+        }
+        c->current_return_type = self_ty;
+    } else {
+        c->current_return_type = sn_check_resolve_type(c, decl->ret);
+    }
     if (decl->is_async && decl->is_pulsar) {
         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_IN_ASYNC, decl->span,
                      "function `%s` cannot be declared as both async and pulsar",
@@ -1800,12 +1813,12 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
             }
         }
     }
-    c->in_constructor =
-        decl->name && sn_intern_cstr(c->intern, decl->name) ==
-                          sn_intern_cstr(c->intern, "constructor");
+    c->in_constructor = is_new_constructor ||
+        (decl->name && sn_intern_cstr(c->intern, decl->name) ==
+                           sn_intern_cstr(c->intern, "constructor"));
     c->in_async_body = decl->is_async;
     sn_check_stmt(c, &params_scope, decl->body);
-    if (c->current_return_type && !is_error(c->current_return_type) &&
+    if (!c->in_constructor && c->current_return_type && !is_error(c->current_return_type) &&
         c->current_return_type->tag != SN_T_UNIT &&
         !stmt_always_returns(decl->body)) {
         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_MISSING_RETURN, decl->span,

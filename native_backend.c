@@ -463,8 +463,14 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
   fprintf(f, "    SnUnit unit;\n");
   fprintf(f, "    sn_parse(&arena, &diag, &toks, &unit);\n");
   fprintf(f, "    for (size_t di = 0; di < unit.decls.len; di++) {\n");
-  fprintf(f,
-          "      sn_list_push(&arena, &merged.decls, unit.decls.items[di]);\n");
+  fprintf(f, "      SnDecl *d = SN_LIST_AT(unit.decls, SnDecl, di);\n");
+  fprintf(f, "      if (d && d->kind == SN_DECL_FUNC && strcmp(d->name, \"main\") == 0) {\n");
+  fprintf(f, "        if (strstr(g_embedded_files[i].path, \".snovalang/deps\") != NULL ||\n");
+  fprintf(f, "            strstr(g_embedded_files[i].path, \"snova-std\") != NULL) {\n");
+  fprintf(f, "          continue; /* Skip library dependency's test main() */\n");
+  fprintf(f, "        }\n");
+  fprintf(f, "      }\n");
+  fprintf(f, "      sn_list_push(&arena, &merged.decls, unit.decls.items[di]);\n");
   fprintf(f, "    }\n");
   fprintf(f, "    sn_diag_set_file(&diag, outer);\n");
   fprintf(f, "  }\n\n");

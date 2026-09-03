@@ -17,7 +17,6 @@ typedef struct {
 
 void project_discover(const char *path, SnProject *out);
 void project_set_offline_cache(SnProject *proj, const char *cache_dir);
-int find_std_root_for_project(const char *source_root, char *out, size_t out_sz);
 int find_builtin_root_for_project(const char *source_root, char *out, size_t out_sz);
 size_t scan_project_roots(SnPackageGraph *graph, const SnProject *proj);
 SnList aggregate_imports(SnArena *a, SnPackageNode *node);

@@ -145,6 +145,7 @@ static const char *scan_qualified(SnArena *arena, const SnTokenVec *toks,
  * node) keeps the exception in one place: link, package scopes and import
  * lookup all then match on the single name the file actually declares. */
 static const char *canonical_import_name(const char *name) {
+    if (!name) return name;
     static const char PREFIX[] = "builtin.metadata.";
     if (strncmp(name, PREFIX, sizeof(PREFIX) - 1u) == 0) {
         return "builtin.metadata";
@@ -200,6 +201,15 @@ static int scan_section(SnPackageGraph *g, const SnDiagFile *file,
     }
 
     SnPackageNode *node = find_or_create(g, pf->package);
+    const char *p1 = strrchr(pf->path, '/');
+    const char *name1 = p1 ? p1 + 1 : pf->path;
+    for (SnPackageFile *existing = node->files; existing; existing = existing->next) {
+        const char *p2 = strrchr(existing->path, '/');
+        const char *name2 = p2 ? p2 + 1 : existing->path;
+        if (strcmp(name1, name2) == 0 && strcmp(pf->path, existing->path) != 0) {
+            return 1;
+        }
+    }
     pf->next = node->files;
     node->files = pf;
     g->file_count++;
@@ -252,12 +262,48 @@ static void scan_header(SnPackageGraph *g, const char *path, const char *src,
     }
 
     if (!any_section) {
-        SnSpan zero;
-        memset(&zero, 0, sizeof(zero));
-        zero.line = 1;
-        zero.col = 1;
-        sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_MISSING_PACKAGE_DECL, zero,
-                     "%s: file has no `package` declaration", path);
+        size_t path_len = strlen(path);
+        int is_sno = (path_len >= 4u && strcmp(path + path_len - 4u, ".sno") == 0);
+        if (is_sno) {
+            /* .sno files are Snovalang script files; an explicit package header is optional.
+             * They default to the implicit "main" script package. */
+            SnPackageFile *pf = (SnPackageFile *)sn_arena_calloc(a, sizeof(SnPackageFile));
+            pf->path = sn_arena_strndup(a, path, strlen(path));
+            pf->src = src;
+            pf->src_len = len;
+            pf->package = sn_intern_cstr(g->intern, "main");
+
+            size_t p = 0;
+            while (toks.data[p].kind != SN_TOK_EOF) {
+                if (toks.data[p].kind == SN_TOK_IMPORT) {
+                    p++;
+                    SnSpan span;
+                    const char *name = scan_qualified(a, &toks, &p, &span);
+                    if (name) {
+                        if (toks.data[p].kind == SN_TOK_SEMI) p++;
+                        sn_list_push(a, &pf->imports,
+                                     (void *)sn_intern_cstr(g->intern, canonical_import_name(name)));
+                        SnSpan *sp = (SnSpan *)sn_arena_alloc(a, sizeof(SnSpan));
+                        *sp = span;
+                        sn_list_push(a, &pf->import_spans, sp);
+                    }
+                } else {
+                    p++;
+                }
+            }
+
+            SnPackageNode *node = find_or_create(g, pf->package);
+            pf->next = node->files;
+            node->files = pf;
+            g->file_count++;
+        } else {
+            SnSpan zero;
+            memset(&zero, 0, sizeof(zero));
+            zero.line = 1;
+            zero.col = 1;
+            sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_MISSING_PACKAGE_DECL, zero,
+                         "%s: file has no `package` declaration", path);
+        }
     }
 
     sn_diag_set_file(g->diag, outer);
@@ -295,7 +341,18 @@ static char *read_source_file(SnArena *a, const char *path, size_t *out_len) {
 
 static int has_snova_suffix(const char *path) {
     size_t n = strlen(path);
-    return n >= 6u && strcmp(path + n - 6u, ".snova") == 0;
+    if (n >= 6u && strcmp(path + n - 6u, ".snova") == 0) {
+        return 1;
+    }
+    if (n >= 4u && strcmp(path + n - 4u, ".sno") == 0) {
+        const char *slash = strrchr(path, '/');
+        const char *filename = slash ? slash + 1 : path;
+        if (strcmp(filename, "mod.sno") == 0 || strcmp(filename, "snova.sno") == 0) {
+            return 0;
+        }
+        return 1;
+    }
+    return 0;
 }
 
 /* Scans exactly one file, unlike sn_pkggraph_scan_root() which recursively

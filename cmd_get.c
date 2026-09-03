@@ -234,6 +234,7 @@ typedef struct SnManifest {
     char module_name[256];
     char module_url[512];
     char snova_version[64];
+    int is_root;
     SnManifestDep *direct;
     SnManifestDep *indirect;
     int direct_count;
@@ -359,9 +360,34 @@ static int manifest_read(const char *manifest_path, SnManifest *m) {
             continue;
         }
 
-        if (strncmp(p, "snova", 5) == 0 && (p[5] == ' ' || p[5] == '\t' || p[5] == '"')) {
+        if (strncmp(p, "root", 4) == 0 && (p[4] == ' ' || p[4] == '\t' || p[4] == '=' || p[4] == '\0')) {
+            p += 4;
+            str_trim(p);
+            if (p[0] == '=') { p++; str_trim(p); }
+            if (p[0] == '\0' || strncmp(p, "true", 4) == 0 || strncmp(p, "1", 1) == 0) {
+                m->is_root = 1;
+            } else {
+                m->is_root = 0;
+            }
+            continue;
+        }
+
+        if (strncmp(p, "is_root", 7) == 0 && (p[7] == ' ' || p[7] == '\t' || p[7] == '=' || p[7] == '\0')) {
+            p += 7;
+            str_trim(p);
+            if (p[0] == '=') { p++; str_trim(p); }
+            if (p[0] == '\0' || strncmp(p, "true", 4) == 0 || strncmp(p, "1", 1) == 0) {
+                m->is_root = 1;
+            } else {
+                m->is_root = 0;
+            }
+            continue;
+        }
+
+        if (strncmp(p, "snova", 5) == 0 && (p[5] == ' ' || p[5] == '\t' || p[5] == '"' || p[5] == '=')) {
             p += 5;
             str_trim(p);
+            if (p[0] == '=') { p++; str_trim(p); }
             if (p[0] == '"') {
                 p++;
                 char *q = strchr(p, '"');
@@ -491,6 +517,10 @@ static int manifest_write(const char *manifest_path, const SnManifest *m) {
         fprintf(out, "module %s %s\n\n", m->module_name[0] ? m->module_name : "app", m->module_url);
     } else {
         fprintf(out, "module %s\n\n", m->module_name[0] ? m->module_name : "app");
+    }
+
+    if (m->is_root) {
+        fprintf(out, "root true\n\n");
     }
 
     fprintf(out, "snova \"%s\"\n\n", m->snova_version[0] ? m->snova_version : "1.0.0");

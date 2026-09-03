@@ -91,53 +91,6 @@ void project_set_offline_cache(SnProject *proj, const char *cache_dir) {
   }
 }
 
-int find_std_root_for_project(const char *source_root, char *out,
-                              size_t out_sz) {
-  const char *env_dir = getenv("SNOVA_STD_DIR");
-  if (env_dir && env_dir[0] && path_is_dir(env_dir)) {
-    snprintf(out, out_sz, "%s", env_dir);
-    return 1;
-  }
-  char candidate[SNOVAC_PATH_MAX + 64];
-  /* Check relative to source_root */
-  if (source_root && source_root[0]) {
-    snprintf(candidate, sizeof(candidate), "%s/../snova-std/src", source_root);
-    if (path_is_dir(candidate)) {
-      normalize_path_into(candidate, out, out_sz);
-      return 1;
-    }
-    snprintf(candidate, sizeof(candidate), "%s/../../snova-std/src",
-             source_root);
-    if (path_is_dir(candidate)) {
-      normalize_path_into(candidate, out, out_sz);
-      return 1;
-    }
-  }
-  /* Check relative to g_exe_dir */
-  if (g_exe_dir[0]) {
-    snprintf(candidate, sizeof(candidate), "%s/../snova-std/src", g_exe_dir);
-    if (path_is_dir(candidate)) {
-      normalize_path_into(candidate, out, out_sz);
-      return 1;
-    }
-    snprintf(candidate, sizeof(candidate), "%s/../../snova-std/src", g_exe_dir);
-    if (path_is_dir(candidate)) {
-      normalize_path_into(candidate, out, out_sz);
-      return 1;
-    }
-  }
-  /* Check in ~/.snovalang/std/src */
-  const char *home = getenv("HOME");
-  if (home && home[0]) {
-    snprintf(candidate, sizeof(candidate), "%s/.snovalang/std/src", home);
-    if (path_is_dir(candidate)) {
-      normalize_path_into(candidate, out, out_sz);
-      return 1;
-    }
-  }
-  return 0;
-}
-
 int find_builtin_root_for_project(const char *source_root, char *out,
                                   size_t out_sz) {
   const char *env_dir = getenv("SNOVA_BUILTIN_DIR");
@@ -154,14 +107,72 @@ int find_builtin_root_for_project(const char *source_root, char *out,
   return 0;
 }
 
+static void scan_manifest_deps(SnPackageGraph *graph, const SnProject *proj, const char *manifest_path) {
+    FILE *f = fopen(manifest_path, "r");
+    if (!f) {
+        if (proj->deps_root[0]) sn_pkggraph_scan_root(graph, proj->deps_root);
+        return;
+    }
+    char line[512];
+    int in_deps = 0;
+    int found_any = 0;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strstr(p, "direct = [") || strstr(p, "direct=[") || strstr(p, "indirect = [") || strstr(p, "indirect=[")) {
+            in_deps = 1;
+        } else if (in_deps && strchr(p, ']')) {
+            in_deps = 0;
+        } else if (in_deps) {
+            char *q1 = strchr(p, '"');
+            if (q1) {
+                q1++;
+                char *q2 = strchr(q1, '"');
+                if (q2) {
+                    *q2 = '\0';
+                    const char *arrow = strstr(q1, "->");
+                    const char *mod = arrow ? arrow + 2 : q1;
+                    while (*mod == ' ' || *mod == '\t') mod++;
+                    char mod_buf[256];
+                    snprintf(mod_buf, sizeof(mod_buf), "%s", mod);
+                    char *at = strchr(mod_buf, '@');
+                    if (at) *at = '\0';
+                    size_t mlen = strlen(mod_buf);
+                    while (mlen > 0 && (mod_buf[mlen - 1] == ' ' || mod_buf[mlen - 1] == '\t' || mod_buf[mlen - 1] == '\n' || mod_buf[mlen - 1] == '\r')) {
+                        mod_buf[--mlen] = '\0';
+                    }
+                    const char *clean_mod = mod_buf;
+                    if (strncmp(clean_mod, "https://", 8) == 0) clean_mod += 8;
+                    if (strncmp(clean_mod, "http://", 7) == 0) clean_mod += 7;
+
+                    if (clean_mod[0] && proj->deps_root[0]) {
+                        char dep_dir[SNOVAC_PATH_MAX];
+                        snprintf(dep_dir, sizeof(dep_dir), "%s/%s", proj->deps_root, clean_mod);
+                        if (path_is_dir(dep_dir)) {
+                            sn_pkggraph_scan_root(graph, dep_dir);
+                            found_any = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fclose(f);
+    if (!found_any && proj->deps_root[0]) {
+        sn_pkggraph_scan_root(graph, proj->deps_root);
+    }
+}
+
 size_t scan_project_roots(SnPackageGraph *graph, const SnProject *proj) {
   size_t own = sn_pkggraph_scan_root(graph, proj->source_root);
-  if (proj->deps_root[0]) {
+  if (proj->has_manifest) {
+    char proj_root[SNOVAC_PATH_MAX];
+    char manifest_path[SNOVAC_PATH_MAX + 64];
+    dirname_into(proj->source_root, proj_root, sizeof(proj_root));
+    snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj_root);
+    scan_manifest_deps(graph, proj, manifest_path);
+  } else if (proj->deps_root[0]) {
     sn_pkggraph_scan_root(graph, proj->deps_root);
-  }
-  char std_dir[SNOVAC_PATH_MAX];
-  if (find_std_root_for_project(proj->source_root, std_dir, sizeof(std_dir))) {
-    sn_pkggraph_scan_root_fallback(graph, std_dir);
   }
   char builtin_dir[SNOVAC_PATH_MAX];
   if (find_builtin_root_for_project(proj->source_root, builtin_dir,

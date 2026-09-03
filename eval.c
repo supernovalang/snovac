@@ -27,9 +27,9 @@ Env *env_new(Interp *in, Env *parent) {
 
 Value *env_lookup(Env *e, const char *name) {
     for (; e; e = e->parent) {
-        for (size_t i = 0; i < e->names.len; i++) {
-            if (strcmp((const char *)e->names.items[i], name) == 0) {
-                return (Value *)e->slots.items[i];
+        for (size_t i = e->names.len; i > 0; i--) {
+            if (strcmp((const char *)e->names.items[i - 1], name) == 0) {
+                return (Value *)e->slots.items[i - 1];
             }
         }
     }
@@ -177,6 +177,23 @@ const SnDecl *find_member(const SnDecl *cls, const char *name) {
         const SnDecl *m = (const SnDecl *)cls->members.items[i];
         if (m->name && strcmp(m->name, name) == 0) {
             return m;
+        }
+    }
+    return NULL;
+}
+
+const SnDecl *find_member_inherited(const Interp *in, const SnDecl *cls, const char *name) {
+    if (!cls) return NULL;
+    const SnDecl *m = find_member(cls, name);
+    if (m) return m;
+    for (size_t i = 0; i < cls->supertypes.len; i++) {
+        const SnType *st = (const SnType *)cls->supertypes.items[i];
+        if (st && st->name) {
+            const SnDecl *parent = find_type(in, st->name);
+            if (parent) {
+                const SnDecl *pm = find_member_inherited(in, parent, name);
+                if (pm) return pm;
+            }
         }
     }
     return NULL;
@@ -365,6 +382,7 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     in.arena = arena;
     in.diag = diag;
     in.unit = unit;
+    in.globals = env_new(&in, NULL);
     in.ret = v_unit();
     in.flow = FLOW_NORMAL;
     in.failed = 0;

@@ -524,9 +524,20 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
         return v_unit();
     }
 
-    /* Bare name: a local lambda value, a top-level function, a constructor
-     * `Counter()`, or a variant constructor `Some(x)` / `Ok(v)`. */
     if (callee->kind == SN_EXPR_IDENT && callee->text) {
+        if (strcmp(callee->text, "type") == 0) {
+            /* type(T) expression returns type name as string */
+            if (e->args.len > 0) {
+                const SnExpr *arg0 = (const SnExpr *)e->args.items[0];
+                if (arg0->text) {
+                    return v_str(arg0->text);
+                }
+                Value av = eval_expr(in, env, arg0);
+                if (av.kind == V_STRING) return av;
+                return v_str(to_string(in, av, e->span));
+            }
+            return v_str("type");
+        }
         Value *local = env_lookup(env, callee->text);
         if (local && local->kind == V_LAMBDA) {
             return call_lambda(in, local->as.lam, (SnList *)&e->args, env,
@@ -563,10 +574,28 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
             !env_lookup(env, callee->lhs->text)) {
             const SnDecl *cls = find_type(in, callee->lhs->text);
             if (cls) {
-                const SnDecl *m = find_member(cls, callee->text);
+                const SnDecl *m = find_member_inherited(in, cls, callee->text);
                 if (m) {
+                    if (strcmp(m->name, "new") == 0) {
+                        /* Canonical constructor: public static method new(...) { this.x = x } */
+                        Object *obj = instantiate(in, cls, NULL, env, e->span);
+                        Value res = call_method(in, obj, m, (SnList *)&e->args, env, e->span);
+                        if (res.kind == V_OBJECT) {
+                            return res;
+                        }
+                        Value out_obj;
+                        out_obj.kind = V_OBJECT;
+                        out_obj.as.o = obj;
+                        return out_obj;
+                    }
                     return call_function(in, m, (SnList *)&e->args, env, NULL,
                                          e->span);
+                }
+                if (strcmp(callee->text, "new") == 0) {
+                    Value v;
+                    v.kind = V_OBJECT;
+                    v.as.o = instantiate(in, cls, (SnList *)&e->args, env, e->span);
+                    return v;
                 }
                 rt_error(in, SNOVA_UNDEFINED_NAME, e->span,
                          "unknown method `%s`",
@@ -591,7 +620,7 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
             return out;
         }
         if (recv.kind == V_OBJECT) {
-            const SnDecl *m = find_member(recv.as.o->cls, callee->text);
+            const SnDecl *m = find_member_inherited(in, recv.as.o->cls, callee->text);
             if (m) {
                 return call_method(in, recv.as.o, m, (SnList *)&e->args, env,
                                    e->span);
@@ -635,9 +664,38 @@ static Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
     if (e->lhs->kind == SN_EXPR_IDENT) {
         slot = env_lookup(env, e->lhs->text);
     } else if (e->lhs->kind == SN_EXPR_MEMBER) {
+        if (e->lhs->lhs && e->lhs->lhs->kind == SN_EXPR_IDENT && e->lhs->lhs->text &&
+            !env_lookup(env, e->lhs->lhs->text)) {
+            const SnDecl *cls = find_type(in, e->lhs->lhs->text);
+            if (cls) {
+                char key[512];
+                snprintf(key, sizeof(key), "%s.%s", e->lhs->lhs->text, e->lhs->text);
+                slot = env_lookup(in->globals, key);
+                if (!slot) {
+                    slot = env_define(in, in->globals, key, val);
+                }
+            }
+        }
+        if (!slot) {
+            Value recv = eval_expr(in, env, e->lhs->lhs);
+            if (recv.kind == V_OBJECT) {
+                slot = object_field(recv.as.o, e->lhs->text);
+                if (!slot && recv.as.o) {
+                    Value *new_slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
+                    *new_slot = v_unit();
+                    sn_list_push(in->arena, &recv.as.o->names, (void *)e->lhs->text);
+                    sn_list_push(in->arena, &recv.as.o->slots, new_slot);
+                    slot = new_slot;
+                }
+            }
+        }
+    } else if (e->lhs->kind == SN_EXPR_INDEX) {
         Value recv = eval_expr(in, env, e->lhs->lhs);
-        if (recv.kind == V_OBJECT) {
-            slot = object_field(recv.as.o, e->lhs->text);
+        if (recv.kind == V_ARRAY) {
+            long long idx = as_int(in, eval_expr(in, env, e->lhs->rhs), e->span);
+            if (idx >= 0 && (size_t)idx < recv.as.arr->items.len) {
+                slot = (Value *)recv.as.arr->items.items[idx];
+            }
         }
     }
     if (!slot) {
@@ -715,6 +773,23 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
                         return v_variant(in, v->name, empty);
                     }
                 }
+            }
+            const SnDecl *cls = find_type(in, e->lhs->text);
+            if (cls) {
+                char key[512];
+                snprintf(key, sizeof(key), "%s.%s", e->lhs->text, e->text);
+                Value *slot = env_lookup(in->globals, key);
+                if (slot) {
+                    return *slot;
+                }
+                const SnDecl *f = find_member(cls, e->text);
+                if (f) {
+                    Value v = f->init ? eval_expr(in, env, f->init) : default_for(f->type);
+                    env_define(in, in->globals, key, v);
+                    return v;
+                }
+            }
+            if (en) {
                 rt_error(in, SNOVA_UNDEFINED_NAME, e->span,
                          "enum `%s` has no variant `%s`", e->lhs->text,
                          e->text);

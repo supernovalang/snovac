@@ -142,7 +142,13 @@ int cmd_build_project(const char *path, const char *out_path,
       sn_parse(&arena, &diag, &toks, &unit);
 
       for (size_t i = 0; i < unit.decls.len; i++) {
-        sn_list_push(&arena, &merged.decls, unit.decls.items[i]);
+        SnDecl *d = SN_LIST_AT(unit.decls, SnDecl, i);
+        if (d && d->kind == SN_DECL_FUNC && strcmp(d->name, "main") == 0) {
+          if (strncmp(pf->path, proj.source_root, strlen(proj.source_root)) != 0) {
+            continue; /* Skip library dependency's test main() */
+          }
+        }
+        sn_list_push(&arena, &merged.decls, d);
       }
 
       sn_diag_set_file(&diag, outer);
