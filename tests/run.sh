@@ -284,5 +284,211 @@ if [ -f "$BUILD_OUT" ]; then
   rm -f "$BUILD_OUT"
 fi
 
+# ── snovac get & dependency graph tests ─────────────────────────────────────
+GET_TEST_DIR="$(mktemp -d)"
+
+# Fixture: depC
+mkdir -p "$GET_TEST_DIR/depC/src"
+cat > "$GET_TEST_DIR/depC/mod.sno" <<'EOF'
+module depC
+snova "1.0.0"
+EOF
+cat > "$GET_TEST_DIR/depC/src/DepC.snova" <<'EOF'
+package depC
+public struct ValC {
+    public let val: int
+}
+EOF
+
+# Fixture: depB (depends on depC)
+mkdir -p "$GET_TEST_DIR/depB/src"
+cat > "$GET_TEST_DIR/depB/mod.sno" <<EOF
+module depB
+snova "1.0.0"
+dependencies(
+    direct = [
+        "$GET_TEST_DIR/depC@1.0.0"
+    ]
+)
+EOF
+cat > "$GET_TEST_DIR/depB/src/DepB.snova" <<'EOF'
+package depB
+import depC.ValC
+public struct ValB {
+    public let c: ValC
+}
+EOF
+
+# Fixture: depA (depends on depB and depC)
+mkdir -p "$GET_TEST_DIR/depA/src"
+cat > "$GET_TEST_DIR/depA/mod.sno" <<EOF
+module depA
+snova "1.0.0"
+dependencies(
+    direct = [
+        "$GET_TEST_DIR/depB@1.0.0",
+        "$GET_TEST_DIR/depC@1.0.0"
+    ]
+)
+EOF
+cat > "$GET_TEST_DIR/depA/src/DepA.snova" <<'EOF'
+package depA
+import depB.ValB
+public struct ValA {
+    public let b: ValB
+}
+EOF
+
+# Project under test
+GET_PROJ="$GET_TEST_DIR/my_app"
+mkdir -p "$GET_PROJ/src/app"
+cat > "$GET_PROJ/mod.sno" <<'EOF'
+module my_app
+snova "1.0.0"
+EOF
+cat > "$GET_PROJ/src/app/Main.snova" <<'EOF'
+package app
+import depA.ValA
+
+func main(): int {
+    return 0
+}
+EOF
+
+# Test: get direct dependency with transitive resolution
+assert "get: fetch direct and transitive deps" 0 \
+  "$(rc_of "$SNOVAC" get --project "$GET_PROJ" "$GET_TEST_DIR/depA")"
+
+assert "get: direct dependency listed in mod.sno" 1 \
+  "$(grep -c "depA@1.0.0" "$GET_PROJ/mod.sno" || true)"
+
+assert "get: indirect edge depA -> depB listed" 1 \
+  "$(grep -c "depA -> depB" "$GET_PROJ/mod.sno" || true)"
+
+assert "get: indirect edge depB -> depC listed" 1 \
+  "$(grep -c "depB -> depC" "$GET_PROJ/mod.sno" || true)"
+
+assert "get: project check passes with fetched deps" 0 \
+  "$(rc_of "$SNOVAC" check --project "$GET_PROJ/src/app/Main.snova")"
+
+# Test: idempotency (re-running get does not duplicate or fail)
+assert "get: re-running get is idempotent" 0 \
+  "$(rc_of "$SNOVAC" get --project "$GET_PROJ" "$GET_TEST_DIR/depA")"
+
+assert "get: direct count remains 1 after rerun" 1 \
+  "$(grep -c "depA@1.0.0" "$GET_PROJ/mod.sno" || true)"
+
+# Test: project run and build with fetched dependencies
+assert "get: project run with fetched deps" 0 \
+  "$(rc_of "$SNOVAC" run --project "$GET_PROJ")"
+
+BUILD_PROJ_OUT="$GET_TEST_DIR/app_bin"
+assert "get: project build with fetched deps" 0 \
+  "$(rc_of "$SNOVAC" build --project "$GET_PROJ" -o "$BUILD_PROJ_OUT")"
+rm -f "$BUILD_PROJ_OUT"
+
+# Test: diamond sharing (depD -> depF, depE -> depF)
+mkdir -p "$GET_TEST_DIR/depF/src" "$GET_TEST_DIR/depD/src" "$GET_TEST_DIR/depE/src" "$GET_TEST_DIR/diamond_app/src/app"
+cat > "$GET_TEST_DIR/depF/mod.sno" <<'EOF'
+module depF
+snova "1.0.0"
+EOF
+cat > "$GET_TEST_DIR/depF/src/DepF.snova" <<'EOF'
+package depF
+public struct ItemF { public let x: int }
+EOF
+
+cat > "$GET_TEST_DIR/depD/mod.sno" <<EOF
+module depD
+snova "1.0.0"
+dependencies(
+    direct = [ "$GET_TEST_DIR/depF@1.0.0" ]
+)
+EOF
+cat > "$GET_TEST_DIR/depD/src/DepD.snova" <<'EOF'
+package depD
+import depF.ItemF
+public struct ItemD { public let f: ItemF }
+EOF
+
+cat > "$GET_TEST_DIR/depE/mod.sno" <<EOF
+module depE
+snova "1.0.0"
+dependencies(
+    direct = [ "$GET_TEST_DIR/depF@1.0.0" ]
+)
+EOF
+cat > "$GET_TEST_DIR/depE/src/DepE.snova" <<'EOF'
+package depE
+import depF.ItemF
+public struct ItemE { public let f: ItemF }
+EOF
+
+cat > "$GET_TEST_DIR/diamond_app/mod.sno" <<'EOF'
+module diamond_app
+snova "1.0.0"
+EOF
+cat > "$GET_TEST_DIR/diamond_app/src/app/Main.snova" <<'EOF'
+package app
+import depD.ItemD
+import depE.ItemE
+func main(): int { return 0 }
+EOF
+
+assert "get: diamond direct depD" 0 \
+  "$(rc_of "$SNOVAC" get --project "$GET_TEST_DIR/diamond_app" "$GET_TEST_DIR/depD")"
+assert "get: diamond direct depE" 0 \
+  "$(rc_of "$SNOVAC" get --project "$GET_TEST_DIR/diamond_app" "$GET_TEST_DIR/depE")"
+
+assert "get: diamond has depD direct" 1 \
+  "$(grep -c "depD@1.0.0" "$GET_TEST_DIR/diamond_app/mod.sno" || true)"
+assert "get: diamond has depE direct" 1 \
+  "$(grep -c "depE@1.0.0" "$GET_TEST_DIR/diamond_app/mod.sno" || true)"
+assert "get: diamond indirect depD -> depF" 1 \
+  "$(grep -c "depD -> depF" "$GET_TEST_DIR/diamond_app/mod.sno" || true)"
+assert "get: diamond indirect depE -> depF" 1 \
+  "$(grep -c "depE -> depF" "$GET_TEST_DIR/diamond_app/mod.sno" || true)"
+assert "get: diamond project check passes" 0 \
+  "$(rc_of "$SNOVAC" check --project "$GET_TEST_DIR/diamond_app/src/app/Main.snova")"
+
+# Test: get with no args and no manifest fails cleanly
+EMPTY_DIR="$(mktemp -d)"
+assert "get: no args without manifest errors cleanly" 2 \
+  "$(rc_of "$SNOVAC" get --project "$EMPTY_DIR")"
+rm -rf "$EMPTY_DIR"
+
+# Test: cycle detection (cycleA -> cycleB -> cycleA)
+mkdir -p "$GET_TEST_DIR/cycleA" "$GET_TEST_DIR/cycleB" "$GET_TEST_DIR/cycle_proj"
+cat > "$GET_TEST_DIR/cycleA/mod.sno" <<EOF
+module cycleA
+snova "1.0.0"
+dependencies(
+    direct = [
+        "$GET_TEST_DIR/cycleB@1.0.0"
+    ]
+)
+EOF
+cat > "$GET_TEST_DIR/cycleB/mod.sno" <<EOF
+module cycleB
+snova "1.0.0"
+dependencies(
+    direct = [
+        "$GET_TEST_DIR/cycleA@1.0.0"
+    ]
+)
+EOF
+cat > "$GET_TEST_DIR/cycle_proj/mod.sno" <<'EOF'
+module cycle_proj
+snova "1.0.0"
+EOF
+
+CYCLE_OUT="$("$SNOVAC" get --project "$GET_TEST_DIR/cycle_proj" "$GET_TEST_DIR/cycleA" 2>&1 || true)"
+assert "get: cycle detection fails command" 1 \
+  "$(rc_of "$SNOVAC" get --project "$GET_TEST_DIR/cycle_proj" "$GET_TEST_DIR/cycleA")"
+assert "get: cycle detection reports cycle error" 1 \
+  "$(echo "$CYCLE_OUT" | grep -c "dependency cycle detected" || true)"
+
+rm -rf "$GET_TEST_DIR"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

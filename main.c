@@ -12,6 +12,7 @@
 
 #include "cmd_build.h"
 #include "cmd_check.h"
+#include "cmd_get.h"
 #include "cmd_lex_parse.h"
 #include "cmd_run.h"
 #include "cmd_tidy.h"
@@ -121,6 +122,31 @@ int main(int argc, char **argv) {
             return cmd_build_project(file_path, out_path, target_triple, offline_cache, include_runtime);
         }
         return cmd_build(file_path, out_path, target_triple);
+    }
+
+    /* `get [<repo-url>] [--version=<ver>] [--project=<path>]`: fetches dependencies and updates mod.sno */
+    if (strcmp(argv[1], "get") == 0) {
+        const char *url = NULL;
+        const char *version = NULL;
+        const char *proj_path = ".";
+
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+                fprintf(stdout, "usage: snovac get [<repo-url>] [--version=<ver>] [--project=<path>]\n");
+                return 0;
+            } else if (strncmp(argv[i], "--version=", 10) == 0) {
+                version = argv[i] + 10;
+            } else if (strcmp(argv[i], "--version") == 0 && i + 1 < argc) {
+                version = argv[++i];
+            } else if (strncmp(argv[i], "--project=", 10) == 0) {
+                proj_path = argv[i] + 10;
+            } else if (strcmp(argv[i], "--project") == 0 && i + 1 < argc) {
+                proj_path = argv[++i];
+            } else if (argv[i][0] != '-' && !url) {
+                url = argv[i];
+            }
+        }
+        return cmd_get_project(proj_path, url, version);
     }
 
     /* `run [--project] <path> [--offline-cache[=<dir>]]` */

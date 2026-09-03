@@ -73,11 +73,62 @@ static SnTypeRep *adopt_literal_type(SnChecker *c, SnExpr *e, SnTypeRep *actual,
     return expected;
 }
 
+static SnSymbol *find_type_symbol_anywhere(SnChecker *c, const SnDecl *context_decl, const char *sname) {
+    if (!sname) return NULL;
+
+    if (context_decl) {
+        for (SnPackageScopeEntry *pe = c->resolver->packages; pe; pe = pe->next) {
+            if (pe->scope) {
+                for (size_t bi = 0; bi < pe->scope->nbuckets; bi++) {
+                    for (SnSymbol *sym = pe->scope->buckets[bi]; sym; sym = sym->next) {
+                        if (sym->kind == SN_SYM_TYPE && sym->decl == context_decl) {
+                            SnSymbol *s = sn_scope_lookup_local(pe->scope, sname);
+                            if (s && s->kind == SN_SYM_TYPE) return s;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (c->current_package) {
+        SnScope *pkg_scope = sn_resolver_package_scope(c->resolver, c->current_package);
+        if (pkg_scope) {
+            SnSymbol *s = sn_scope_lookup_local(pkg_scope, sname);
+            if (s && s->kind == SN_SYM_TYPE) return s;
+        }
+    }
+
+    if (c->current_imports) {
+        for (size_t i = 0; i < c->current_imports->len; i++) {
+            const char *imp = SN_LIST_AT(*c->current_imports, const char, i);
+            SnScope *imp_scope = sn_resolver_package_scope(c->resolver, imp);
+            if (imp_scope) {
+                SnSymbol *s = sn_scope_lookup_local(imp_scope, sname);
+                if (s && s->kind == SN_SYM_TYPE) return s;
+            }
+        }
+    }
+
+    for (SnPackageScopeEntry *pe = c->resolver->packages; pe; pe = pe->next) {
+        if (pe->scope) {
+            SnSymbol *s = sn_scope_lookup_local(pe->scope, sname);
+            if (s && s->kind == SN_SYM_TYPE) return s;
+        }
+    }
+
+    if (c->resolver->prelude_scope) {
+        SnSymbol *s = sn_scope_lookup_local(c->resolver->prelude_scope, sname);
+        if (s && s->kind == SN_SYM_TYPE) return s;
+    }
+
+    return NULL;
+}
+
 /* `sub` is `super`, or inherits from it. Follows EVERY supertype listed after
  * `:`, not just the first: the parser deliberately does not tell a base class
  * from an implemented interface (ast.h, `supertypes`), so both count for
- * assignability. Supertype names are looked up in the current package's scope,
- * the same limitation lookup_member_with_inheritance already carries. */
+ * assignability. */
 static int decl_derives_from(SnChecker *c, const SnDecl *sub, const SnDecl *super,
                              int depth) {
     if (!sub || !super || depth > 8) {
@@ -86,14 +137,13 @@ static int decl_derives_from(SnChecker *c, const SnDecl *sub, const SnDecl *supe
     if (sub == super) {
         return 1;
     }
-    SnScope *pkg_scope = sn_resolver_package_scope(c->resolver, c->current_package);
     for (size_t i = 0; i < sub->supertypes.len; i++) {
         const SnType *st = SN_LIST_AT(sub->supertypes, SnType, i);
         if (st->kind != SN_TYPE_NAME) {
             continue;
         }
         const char *sname = sn_intern_cstr(c->intern, st->name);
-        SnSymbol *ssym = pkg_scope ? sn_scope_lookup_local(pkg_scope, sname) : NULL;
+        SnSymbol *ssym = find_type_symbol_anywhere(c, sub, sname);
         if (ssym && ssym->kind == SN_SYM_TYPE &&
             decl_derives_from(c, ssym->decl, super, depth + 1)) {
             return 1;
@@ -371,14 +421,25 @@ static SnSymbol *lookup_member_with_inheritance(SnChecker *c, const SnDecl *type
         if (cur->supertypes.len == 0) {
             break;
         }
-        SnType *super_ty = SN_LIST_AT(cur->supertypes, SnType, 0);
-        if (super_ty->kind != SN_TYPE_NAME) {
-            break;
+        SnSymbol *super_sym = NULL;
+        for (size_t i = 0; i < cur->supertypes.len; i++) {
+            SnType *super_ty = SN_LIST_AT(cur->supertypes, SnType, i);
+            if (super_ty->kind != SN_TYPE_NAME) {
+                continue;
+            }
+            const char *super_name = sn_intern_cstr(c->intern, super_ty->name);
+            super_sym = find_type_symbol_anywhere(c, cur, super_name);
+            if (super_sym && super_sym->kind == SN_SYM_TYPE) {
+                SnScope *sms = sn_resolver_type_scope(c->resolver, super_sym->decl);
+                if (sms) {
+                    SnSymbol *sym = sn_scope_lookup_local(sms, name);
+                    if (sym) {
+                        return sym;
+                    }
+                }
+                break;
+            }
         }
-        const char *super_name = sn_intern_cstr(c->intern, super_ty->name);
-        SnScope *pkg_scope = sn_resolver_package_scope(c->resolver, c->current_package);
-        SnSymbol *super_sym =
-            pkg_scope ? sn_scope_lookup_local(pkg_scope, super_name) : NULL;
         cur = (super_sym && super_sym->kind == SN_SYM_TYPE) ? super_sym->decl : NULL;
         depth++;
     }

@@ -24,7 +24,7 @@ endif
 
 BIN      = $(BUILD)/snovac$(EXE)
 
-SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd_build.c cmd_tidy.c \
+SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd_build.c cmd_tidy.c cmd_get.c \
        target.c native_backend.c pulsar.c async.c \
        dump.c ast.c \
        lex.c lex_token.c lex_literal.c \

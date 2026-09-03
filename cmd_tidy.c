@@ -1,4 +1,4 @@
-/* cmd_tidy.c — automated dependency pruning and snova.mdlo manifest generator. */
+/* cmd_tidy.c — automated dependency pruning and mod.sno manifest generator. */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -57,8 +57,9 @@ static const KnownIndirectEdge KNOWN_INDIRECT_EDGES[] = {
     {"github.com/supernovalang/snova-http", "github.com/supernovalang/snova-io"},
 };
 
-static void read_module_header(const char *manifest_path, char *mod_name, size_t mod_sz, char *snova_ver, size_t ver_sz) {
+static void read_module_header(const char *manifest_path, char *mod_name, size_t mod_sz, char *mod_url, size_t url_sz, char *snova_ver, size_t ver_sz) {
     snprintf(mod_name, mod_sz, "app");
+    if (mod_url && url_sz > 0) mod_url[0] = '\0';
     snprintf(snova_ver, ver_sz, "1.0.0");
 
     FILE *f = fopen(manifest_path, "r");
@@ -71,6 +72,22 @@ static void read_module_header(const char *manifest_path, char *mod_name, size_t
         if (strncmp(p, "module ", 7) == 0) {
             p += 7;
             while (*p == ' ' || *p == '\t') p++;
+            char *url_start = strchr(p, ' ');
+            if (!url_start) url_start = strchr(p, '\t');
+            
+            if (url_start) {
+                *url_start = '\0';
+                url_start++;
+                while (*url_start == ' ' || *url_start == '\t') url_start++;
+                size_t len = strlen(url_start);
+                while (len > 0 && (url_start[len - 1] == '\n' || url_start[len - 1] == '\r' || url_start[len - 1] == ' ' || url_start[len - 1] == '\t')) {
+                    url_start[--len] = '\0';
+                }
+                if (mod_url && url_sz > 0 && len > 0) {
+                    snprintf(mod_url, url_sz, "%s", url_start);
+                }
+            }
+            
             size_t len = strlen(p);
             while (len > 0 && (p[len - 1] == '\n' || p[len - 1] == '\r' || p[len - 1] == ' ' || p[len - 1] == '\t')) {
                 p[--len] = '\0';
@@ -104,8 +121,9 @@ int cmd_tidy_project(const char *path) {
     }
 
     char mod_name[256];
+    char mod_url[256];
     char snova_ver[64];
-    read_module_header(manifest_path, mod_name, sizeof(mod_name), snova_ver, sizeof(snova_ver));
+    read_module_header(manifest_path, mod_name, sizeof(mod_name), mod_url, sizeof(mod_url), snova_ver, sizeof(snova_ver));
 
     SnArena arena;
     sn_arena_init(&arena, 4 * 1024 * 1024);
@@ -186,7 +204,11 @@ int cmd_tidy_project(const char *path) {
         return 1;
     }
 
-    fprintf(out, "module %s\n\n", mod_name);
+    if (mod_url[0] != '\0') {
+        fprintf(out, "module %s %s\n\n", mod_name, mod_url);
+    } else {
+        fprintf(out, "module %s\n\n", mod_name);
+    }
     fprintf(out, "snova \"%s\"\n\n", snova_ver);
     fprintf(out, "dependencies(\n");
     fprintf(out, "    direct = [\n");
