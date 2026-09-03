@@ -38,6 +38,13 @@ static Value eval_binary(Interp *in, Env *env, const SnExpr *e) {
 
     Value b = eval_expr(in, env, e->rhs);
 
+    if (e->op == SN_TOK_EQ) {
+        return v_bool(value_equals(a, b));
+    }
+    if (e->op == SN_TOK_NE) {
+        return v_bool(!value_equals(a, b));
+    }
+
     /* `+` concatenates when either side is a string. */
     if (e->op == SN_TOK_PLUS && (a.kind == V_STRING || b.kind == V_STRING)) {
         return v_str(str_concat(in, to_string(in, a, e->span),
@@ -164,8 +171,9 @@ static Value make_variant_from_args(Interp *in, Env *env, const char *name,
  * capitalized name is looked up among declared enums' variants so user enums
  * construct the same way. */
 int is_variant_constructor(Interp *in, const char *name) {
-    if (strcmp(name, "Some") == 0 || strcmp(name, "Ok") == 0 ||
-        strcmp(name, "Err") == 0 || strcmp(name, "None") == 0) {
+    const char *vname = strrchr(name, '.') ? strrchr(name, '.') + 1 : name;
+    if (strcmp(vname, "Some") == 0 || strcmp(vname, "Ok") == 0 ||
+        strcmp(vname, "Err") == 0 || strcmp(vname, "None") == 0) {
         return 1;
     }
     for (size_t i = 0; i < in->unit->decls.len; i++) {
@@ -175,7 +183,7 @@ int is_variant_constructor(Interp *in, const char *name) {
         }
         for (size_t j = 0; j < d->variants.len; j++) {
             const SnDecl *v = (const SnDecl *)d->variants.items[j];
-            if (v->name && strcmp(v->name, name) == 0) {
+            if (v->name && strcmp(v->name, vname) == 0) {
                 return 1;
             }
         }

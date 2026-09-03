@@ -46,19 +46,16 @@ int pattern_match_bind(Interp *in, Env *env, const SnPattern *pat,
     switch (pat->kind) {
     case SN_PAT_WILDCARD:
         return 1;
-    case SN_PAT_BINDING:
-        /* A bare pattern name is ambiguous until it's checked against
-         * declared variants (parse_pattern() in parse_type.c records it as
-         * BINDING and defers the call here). A payload-less variant name
-         * ("Draft", "None") must match by identity, not swallow every
-         * subject as a fresh local. */
-        if (is_variant_constructor(in, pat->name)) {
+    case SN_PAT_BINDING: {
+        const char *vname = pattern_variant_name(pat->name);
+        if (is_variant_constructor(in, vname)) {
             return subject.kind == V_VARIANT &&
                   subject.as.vt->payload.len == 0 &&
-                  strcmp(subject.as.vt->name, pat->name) == 0;
+                  strcmp(subject.as.vt->name, vname) == 0;
         }
         env_define(in, env, pat->name, subject);
         return 1;
+    }
     case SN_PAT_LITERAL: {
         Value lit = eval_expr(in, env, pat->literal);
         return !in->failed && value_equals(lit, subject);

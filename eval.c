@@ -249,11 +249,11 @@ Object *instantiate(Interp *in, const SnDecl *cls, SnList *args, Env *env,
             continue;
         }
         Value v;
-        if (m->init) {
-            v = eval_expr(in, env, m->init);
-        } else if (args && argi < args->len) {
+        if (args && argi < args->len) {
             v = eval_expr(in, env, (const SnExpr *)args->items[argi]);
             argi++;
+        } else if (m->init) {
+            v = eval_expr(in, env, m->init);
         } else {
             v = default_for(m->type);
         }
@@ -313,9 +313,11 @@ Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
         env_define(in, local, p->name, v);
     }
 
+    Value saved = in->ret;
     in->ret = v_unit();
     Flow f = exec_stmt(in, local, fn->body);
     Value r = (f == FLOW_RETURN) ? in->ret : v_unit();
+    in->ret = saved;
     in->flow = FLOW_NORMAL;
     return r;
 }

@@ -360,6 +360,66 @@ size_t sn_pkggraph_scan_root(SnPackageGraph *g, const char *root) {
     return count;
 }
 
+size_t sn_pkggraph_scan_root_fallback(SnPackageGraph *g, const char *root) {
+    size_t count = 0;
+    DIR *d = opendir(root);
+    if (!d) {
+        return 0;
+    }
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
+            continue;
+        }
+
+        char path[SN_PKG_PATH_MAX];
+        int written = snprintf(path, sizeof(path), "%s/%s", root, ent->d_name);
+        if (written < 0 || (size_t)written >= sizeof(path)) {
+            continue;
+        }
+
+        struct stat st;
+        if (stat(path, &st) != 0) {
+            continue;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            count += sn_pkggraph_scan_root_fallback(g, path);
+            continue;
+        }
+        if (!S_ISREG(st.st_mode) || !has_snova_suffix(path)) {
+            continue;
+        }
+
+        size_t flen = 0;
+        char *src = read_source_file(g->arena, path, &flen);
+        if (!src) {
+            continue;
+        }
+
+        SnTokenVec toks;
+        sn_lex(g->arena, g->diag, src, flen, &toks);
+        size_t pos = 0;
+        if (toks.len > 0 && toks.data[0].kind == SN_TOK_PACKAGE) {
+            pos++;
+            SnSpan span;
+            const char *pname = scan_qualified(g->arena, &toks, &pos, &span);
+            if (pname) {
+                const char *interned = sn_intern_cstr(g->intern, pname);
+                SnPackageNode *existing = sn_pkggraph_find(g, interned);
+                if (existing && existing->files) {
+                    continue;
+                }
+            }
+        }
+
+        count++;
+        scan_header(g, path, src, flen);
+    }
+    closedir(d);
+    return count;
+}
+
 /* ── linking + cycle detection ────────────────────────────────────────────
  *
  * A cycle among files of the SAME package is legal (plan.md §4.1: "é um

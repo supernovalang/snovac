@@ -478,15 +478,37 @@ void sn_resolver_build_prelude(SnResolver *r) {
     /* Option/Result additionally publish their VARIANTS into the prelude. */
     SnScope *types_pkg =
         sn_resolver_package_scope(r, sn_intern_cstr(r->intern, SN_PRELUDE_PACKAGE));
-    if (!types_pkg) {
-        return;
+    if (types_pkg) {
+        const char *const WITH_VARIANTS[] = {"Option", "Result"};
+        for (size_t i = 0; i < sizeof(WITH_VARIANTS) / sizeof(WITH_VARIANTS[0]); i++) {
+            SnSymbol *sym =
+                sn_scope_lookup_local(types_pkg, sn_intern_cstr(r->intern, WITH_VARIANTS[i]));
+            if (sym) {
+                add_variants_to_prelude(r, sym);
+            }
+        }
     }
-    const char *const WITH_VARIANTS[] = {"Option", "Result"};
-    for (size_t i = 0; i < sizeof(WITH_VARIANTS) / sizeof(WITH_VARIANTS[0]); i++) {
-        SnSymbol *sym =
-            sn_scope_lookup_local(types_pkg, sn_intern_cstr(r->intern, WITH_VARIANTS[i]));
-        if (sym) {
-            add_variants_to_prelude(r, sym);
+
+    /* Ensure fundamental Option / Result variants are unconditionally available */
+    static const char *const BUILTIN_VARIANTS[] = {"Some", "None", "Ok", "Err"};
+    for (size_t i = 0; i < sizeof(BUILTIN_VARIANTS) / sizeof(BUILTIN_VARIANTS[0]); i++) {
+        const char *vname = sn_intern_cstr(r->intern, BUILTIN_VARIANTS[i]);
+        if (!sn_scope_lookup_local(r->prelude_scope, vname)) {
+            SnDecl *vd = (SnDecl *)sn_arena_calloc(r->arena, sizeof(SnDecl));
+            vd->kind = SN_DECL_VARIANT;
+            vd->name = vname;
+            if (strcmp(BUILTIN_VARIANTS[i], "Some") == 0 ||
+                strcmp(BUILTIN_VARIANTS[i], "Ok") == 0 ||
+                strcmp(BUILTIN_VARIANTS[i], "Err") == 0) {
+                SnParam *p = (SnParam *)sn_arena_calloc(r->arena, sizeof(SnParam));
+                p->name = sn_intern_cstr(r->intern, "value");
+                sn_list_push(r->arena, &vd->params, p);
+            }
+            SnSymbol *sym = (SnSymbol *)sn_arena_calloc(r->arena, sizeof(SnSymbol));
+            sym->kind = SN_SYM_VARIANT;
+            sym->name = vname;
+            sym->decl = vd;
+            sn_scope_define(r->prelude_scope, vname, SN_SYM_VARIANT, vd, (SnSpan){0, 0, 0, 0});
         }
     }
 }

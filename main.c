@@ -14,6 +14,7 @@
 #include "cmd_check.h"
 #include "cmd_lex_parse.h"
 #include "cmd_run.h"
+#include "cmd_tidy.h"
 #include "driver_utils.h"
 #include "target.h"
 
@@ -60,6 +61,21 @@ int main(int argc, char **argv) {
         SnTargetInfo target = sn_target_get_active();
         sn_target_print_info(&target, stdout);
         return 0;
+    }
+
+    /* `tidy [--project] [<path>]`: cleans unused dependencies and generates/updates snova.mdlo */
+    if (strcmp(argv[1], "tidy") == 0) {
+        const char *proj_path = ".";
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--project") == 0 && i + 1 < argc) {
+                proj_path = argv[++i];
+            } else if (strncmp(argv[i], "--project=", 10) == 0) {
+                proj_path = argv[i] + 10;
+            } else if (argv[i][0] != '-') {
+                proj_path = argv[i];
+            }
+        }
+        return cmd_tidy_project(proj_path);
     }
 
     /* `build [--project] <path> [-o <out>] [--target=<triple>] [--offline-cache[=<dir>]] [--runtime]`: compiles to standalone native binary */

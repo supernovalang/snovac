@@ -101,6 +101,7 @@ void sn_pkggraph_init(SnPackageGraph *g, SnArena *a, SnInternTable *it,
  * latter) and excluded from the graph. Returns the number of `*.snova` files
  * found under `root` (including excluded ones). */
 size_t sn_pkggraph_scan_root(SnPackageGraph *g, const char *root);
+size_t sn_pkggraph_scan_root_fallback(SnPackageGraph *g, const char *root);
 
 /* Scans exactly one file (not a directory) — for callers that want ONE
  * file's own declarations without absorbing every sibling under the same

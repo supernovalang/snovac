@@ -153,7 +153,7 @@ size_t scan_project_roots(SnPackageGraph *graph, const SnProject *proj) {
     }
     char std_dir[SNOVAC_PATH_MAX];
     if (find_std_root_for_project(proj->source_root, std_dir, sizeof(std_dir))) {
-        sn_pkggraph_scan_root(graph, std_dir);
+        sn_pkggraph_scan_root_fallback(graph, std_dir);
     }
     char builtin_dir[SNOVAC_PATH_MAX];
     if (find_builtin_root_for_project(proj->source_root, builtin_dir, sizeof(builtin_dir))) {
