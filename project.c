@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const MANIFEST_NAMES[] = {"mod.sno", "snova.sno",
+static const char *const MANIFEST_NAMES[] = {"mod.sno", "snova.mod", "snova.sno",
                                              "snova.toml"};
 
 static int find_manifest_dir(const char *start_dir, char *out, size_t out_sz) {

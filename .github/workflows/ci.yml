@@ -1,0 +1,83 @@
+name: CI & Automated Binary Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test & Conformance (${{ matrix.os }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-latest
+          - os: darwin
+            arch: x86_64
+            runner: macos-13
+          - os: darwin
+            arch: aarch64
+            runner: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and Run Full Test Suite
+        run: |
+          make clean
+          make test
+
+  build-binaries:
+    name: Build Binary Artifact (${{ matrix.os }}-${{ matrix.arch }})
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-latest
+          - os: darwin
+            arch: x86_64
+            runner: macos-13
+          - os: darwin
+            arch: aarch64
+            runner: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile snovac binary
+        run: |
+          make clean
+          make
+
+      - name: Package binary artifact
+        run: |
+          mkdir -p dist
+          cp build/snovac dist/snovac
+          tar -czf "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" -C dist snovac
+          shasum -a 256 "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" > "snovac-${{ matrix.os }}-${{ matrix.arch }}.sha256"
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: snovac-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+            snovac-${{ matrix.os }}-${{ matrix.arch }}.sha256
+          retention-days: 30

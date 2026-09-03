@@ -163,13 +163,14 @@ static int fetch_dependency(const char *url_or_path, const char *version, const 
         url_or_path[0] == '/' || url_or_path[0] == '.') {
         const char *local_src = (strncmp(url_or_path, "file://", 7) == 0) ? url_or_path + 7 : url_or_path;
         if (path_is_dir(local_src)) {
-            /* Try git clone first in case it is a git repo */
-            int rc = run_git_clone_safe(local_src, version, target_dir);
-            if (rc == 0) return 0;
-            /* Fallback to recursive directory copy */
-            if (copy_dir_recursive(local_src, target_dir)) {
-                return 0;
+            if (version && version[0]) {
+                char v_tag[128];
+                snprintf(v_tag, sizeof(v_tag), "v%s", (version[0] == 'v' || version[0] == 'V') ? version + 1 : version);
+                if (run_git_clone_safe(local_src, v_tag, target_dir) == 0) return 0;
+                if (run_git_clone_safe(local_src, version, target_dir) == 0) return 0;
             }
+            if (run_git_clone_safe(local_src, NULL, target_dir) == 0) return 0;
+            if (copy_dir_recursive(local_src, target_dir)) return 0;
         }
     }
 
@@ -184,7 +185,27 @@ static int fetch_dependency(const char *url_or_path, const char *version, const 
         snprintf(full_url, sizeof(full_url), "%s", url_or_path);
     }
 
-    int rc = run_git_clone_safe(full_url, version, target_dir);
+    /* 1. Try release tag `v<version>` (e.g. `v1.0.0`) */
+    if (version && version[0]) {
+        char v_tag[128];
+        if (version[0] == 'v' || version[0] == 'V') {
+            snprintf(v_tag, sizeof(v_tag), "%s", version);
+        } else {
+            snprintf(v_tag, sizeof(v_tag), "v%s", version);
+        }
+        if (run_git_clone_safe(full_url, v_tag, target_dir) == 0) {
+            return 0;
+        }
+
+        /* 2. Try release tag `<version>` (e.g. `1.0.0`) */
+        const char *raw_ver = (version[0] == 'v' || version[0] == 'V') ? version + 1 : version;
+        if (run_git_clone_safe(full_url, raw_ver, target_dir) == 0) {
+            return 0;
+        }
+    }
+
+    /* 3. Fallback: clone default branch / HEAD */
+    int rc = run_git_clone_safe(full_url, NULL, target_dir);
     return rc;
 }
 
@@ -251,6 +272,19 @@ static void parse_dep_string(const char *str, SnManifestDep *dep) {
         str_trim(buf);
         snprintf(dep->module, sizeof(dep->module), "%s", buf);
     }
+}
+
+static int find_dir_manifest(const char *dir, char *out_path, size_t out_sz) {
+    const char *names[] = {"mod.sno", "snova.mod", "snova.sno", "snova.toml"};
+    for (size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
+        char cand[SNOVAC_PATH_MAX + 32];
+        snprintf(cand, sizeof(cand), "%s/%s", dir, names[i]);
+        if (path_is_file(cand)) {
+            snprintf(out_path, out_sz, "%s", cand);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int manifest_read(const char *manifest_path, SnManifest *m) {
@@ -333,6 +367,34 @@ static int manifest_read(const char *manifest_path, SnManifest *m) {
         } else if (strstr(p, "direct") && strchr(p, '=')) {
             in_direct = 1;
             in_indirect = 0;
+        } else if (strstr(p, "require") && strchr(p, '(')) {
+            in_direct = 1;
+            in_indirect = 0;
+            continue;
+        }
+
+        /* Go-style require ( github.com/user/pkg v1.0.0 ) without quotes */
+        if (in_direct && !strchr(p, '"') && !strchr(p, '[') && !strchr(p, ']') && !strchr(p, '(') && !strchr(p, ')')) {
+            char mod_id[256] = {0};
+            char mod_ver[64] = {0};
+            if (sscanf(p, "%255s %63s", mod_id, mod_ver) >= 1) {
+                if (mod_id[0] && mod_id[0] != '/' && mod_id[0] != '#' && strchr(mod_id, '.')) {
+                    SnManifestDep *dep = (SnManifestDep *)calloc(1, sizeof(SnManifestDep));
+                    snprintf(dep->module, sizeof(dep->module), "%s", mod_id);
+                    if (mod_ver[0]) snprintf(dep->version, sizeof(dep->version), "%s", mod_ver);
+                    else snprintf(dep->version, sizeof(dep->version), "1.0.0");
+                    snprintf(dep->raw, sizeof(dep->raw), "%s@%s", dep->module, dep->version);
+                    dep->next = NULL;
+                    if (!m->direct) m->direct = dep;
+                    else {
+                        SnManifestDep *cur = m->direct;
+                        while (cur->next) cur = cur->next;
+                        cur->next = dep;
+                    }
+                    m->direct_count++;
+                    continue;
+                }
+            }
         }
 
         char *quote_start = p;
@@ -372,7 +434,7 @@ static int manifest_read(const char *manifest_path, SnManifest *m) {
             quote_start = quote_end + 1;
         }
 
-        if (strchr(p, ']')) {
+        if (strchr(p, ']') || (in_direct && strchr(p, ')'))) {
             if (in_direct) in_direct = 0;
             else if (in_indirect) in_indirect = 0;
         }
@@ -681,10 +743,8 @@ static int graph_resolve_node(DepGraph *g, DepNode *node) {
         }
 
         char mod_path[SNOVAC_PATH_MAX + 32];
-        snprintf(mod_path, sizeof(mod_path), "%s/mod.sno", node->local_dir);
-
         SnManifest manifest;
-        if (path_is_file(mod_path) && manifest_read(mod_path, &manifest)) {
+        if (find_dir_manifest(node->local_dir, mod_path, sizeof(mod_path)) && manifest_read(mod_path, &manifest)) {
             for (SnManifestDep *d = manifest.direct; d; d = d->next) {
                 char d_id[256];
                 char d_ver[64];
@@ -745,9 +805,11 @@ int cmd_get_project(const char *proj_path, const char *url, const char *version)
 
     if (proj.has_manifest) {
         dirname_into(proj.source_root, proj_root, sizeof(proj_root));
-        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj_root);
     } else {
         snprintf(proj_root, sizeof(proj_root), "%s", proj_path ? proj_path : ".");
+    }
+
+    if (!find_dir_manifest(proj_root, manifest_path, sizeof(manifest_path))) {
         snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj_root);
     }
 

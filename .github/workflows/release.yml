@@ -2,11 +2,30 @@ name: Release Snovac Compiler
 
 on:
   push:
-    branches:
-      - master
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (e.g. v1.0.0, v1.0.1, latest)'
+        required: true
+        default: 'latest'
+        type: string
+      release_name:
+        description: 'Release Title'
+        required: false
+        default: ''
+        type: string
+      draft:
+        description: 'Create as Draft Release'
+        required: false
+        default: false
+        type: boolean
+      prerelease:
+        description: 'Mark as Pre-release'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -38,6 +57,9 @@ jobs:
           make clean
           make
 
+      - name: Run Test Gates
+        run: make test
+
       - name: Package release artifact
         run: |
           mkdir -p dist
@@ -52,6 +74,7 @@ jobs:
           path: |
             snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
             snovac-${{ matrix.os }}-${{ matrix.arch }}.sha256
+          retention-days: 30
 
   release:
     name: Create GitHub Release
@@ -72,13 +95,30 @@ jobs:
           find release-assets -type f -exec cp {} release-dist/ \;
           ls -la release-dist
 
+      - name: Determine Tag and Title
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag_name }}"
+            TITLE="${{ inputs.release_name }}"
+            [ -z "$TITLE" ] && TITLE="Snovalang Compiler ${TAG}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+            TITLE="Snovalang Compiler ${TAG}"
+          else
+            TAG="latest"
+            TITLE="Snovalang Compiler (Latest Release)"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+
       - name: Publish or Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
-          name: ${{ github.ref_type == 'tag' && github.ref_name || 'Snovalang Compiler (Latest Release)' }}
-          draft: false
-          prerelease: false
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          draft: ${{ inputs.draft || false }}
+          prerelease: ${{ inputs.prerelease || false }}
           files: release-dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
