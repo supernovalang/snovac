@@ -19,6 +19,10 @@
 #include "driver_utils.h"
 #include "target.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 typedef struct {
     const char *flag;
     int (*run)(const char *path, int dump);
@@ -41,6 +45,10 @@ static const FileCommand FILE_COMMANDS[] = {
 };
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
     if (argc > 0 && argv[0]) {
         sn_set_exe_dir(argv[0]);
     }

@@ -30,7 +30,7 @@ SnStmt *parse_block(P *p) {
         advance_p(p);
     } else {
         error_at(p, cur(p), SNOVA_UNCLOSED_BRACE,
-                "unclosed `{` — reached end of file before finding a matching `}`");
+                "unclosed `{` -- reached end of file before finding a matching `}`");
     }
     ctx_restore(p, ctx);
     return s;

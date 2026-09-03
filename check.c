@@ -707,7 +707,7 @@ static SnTypeRep *check_binary(SnChecker *c, SnExpr *e, SnTypeRep *lt, SnTypeRep
     }
     sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_BINARY_TYPE_MISMATCH, e->span,
                 "operator `%s` cannot be applied to these operand types "
-                "(no implicit numeric promotion — operands must match exactly)",
+                "(no implicit numeric promotion -- operands must match exactly)",
                 sn_tok_name(e->op));
     return sn_type_error(c->types);
 }
@@ -1061,7 +1061,7 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
                              callee_sym->name);
             } else if (callee_sym->decl->is_pulsar && !is_pulsar_launch_call) {
                 sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_DIRECT_CALL, e->span,
-                            "pulsar function `%s` cannot be called directly — use `pulsar %s(...)`",
+                            "pulsar function `%s` cannot be called directly -- use `pulsar %s(...)`",
                             callee_sym->name, callee_sym->name);
             }
             if (e->lhs->resolved_type && e->lhs->resolved_type->tag == SN_T_FUNC) {
@@ -1181,7 +1181,7 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
             } else {
                 sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_BINARY_TYPE_MISMATCH, e->span,
                             "ternary branches have incompatible types (no implicit "
-                            "numeric promotion — branches must match, or one must be "
+                            "numeric promotion -- branches must match, or one must be "
                             "a subtype of the other)");
                 result = sn_type_error(c->types);
             }

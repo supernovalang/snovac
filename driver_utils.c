@@ -171,7 +171,7 @@ char *read_file(const char *path, size_t *out_len) {
 void usage(FILE *out) {
   fprintf(
       out,
-      "sncli %s — Snovalang Toolchain & Compiler\n"
+      "sncli %s - Snovalang Toolchain & Compiler\n"
       "\n"
       "usage:\n"
       "  sncli --version\n"
@@ -187,7 +187,7 @@ void usage(FILE *out) {
       "                                       compile to standalone native "
       "executable\n"
       "  sncli check         <file.snova>   resolve + type-check (see llm.md: "
-      "coverage is partial — no generics substitution yet)\n"
+      "coverage is partial - no generics substitution yet)\n"
       "\n"
       "dependencies and package management:\n"
       "  sncli get           [<repo-url>] [--version=<ver>] [--project=<path>]\n"
@@ -197,7 +197,7 @@ void usage(FILE *out) {
       "                                       prune unused dependencies and sync mod.sno\n"
       "\n"
       "project-wide (every file the program is built from, not just the\n"
-      "entry file — the source root is the nearest manifest's src/, its\n"
+      "entry file - the source root is the nearest manifest's src/, its\n"
       "own directory otherwise, plus .snovalang/deps):\n"
       "  sncli --check-parse-project <path>  lex+parse the whole project\n"
       "  sncli check --project       <path>  + resolve and type-check\n"

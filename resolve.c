@@ -208,7 +208,7 @@ static void collect_member(SnResolver *r, SnScope *member_scope, const SnDecl *o
      * declaration has a member symbol kind at all. */
     if (!via_extension && m->kind == SN_DECL_FUNC) {
         sn_diag_emit(r->diag, SN_DIAG_ERROR, SNOVA_FUNC_IN_TYPE_BODY, m->span,
-                     "`func` is not valid inside a class body — use `method`.");
+                     "`func` is not valid inside a class body -- use `method`.");
     }
 
     SnSymbolKind msk;
@@ -350,7 +350,7 @@ size_t sn_resolver_collect(SnResolver *r) {
                 if (d->kind == SN_DECL_METHOD) {
                     sn_diag_emit(r->diag, SN_DIAG_ERROR, SNOVA_METHOD_AT_TOP_LEVEL,
                                  d->span,
-                                 "`method` is not valid at the top level — use `func` "
+                                 "`method` is not valid at the top level -- use `func` "
                                  "for module-level functions.");
                 }
 

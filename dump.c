@@ -146,7 +146,7 @@ void sn_dump_decl(const SnDecl *d, int depth) {
     print_decorators(d);
 
     if ((d->kind == SN_DECL_METHOD || d->kind == SN_DECL_FUNC) && !d->body) {
-        printf("   (no body — expects @native)");
+        printf("   (no body -- expects @native)");
     }
     printf("\n");
 
