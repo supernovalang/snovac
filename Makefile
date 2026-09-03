@@ -58,7 +58,11 @@ RT_SRCS = driver_utils.c project.c target.c native_backend.c pulsar.c async.c \
 RT_OBJS = $(addprefix $(BUILD)/,$(RT_SRCS:.c=.o))
 LIB_RT  = $(BUILD)/libsnovart.a
 
-.PHONY: all clean test unit conformance
+# Default install prefix (~/.snova or /usr/local)
+PREFIX  ?= $(HOME)/.snova
+BINDIR  ?= $(PREFIX)/bin
+
+.PHONY: all clean test unit conformance install uninstall
 
 all: $(BIN) $(LIB_RT)
 
@@ -67,6 +71,21 @@ $(BIN): $(OBJS)
 
 $(LIB_RT): $(RT_OBJS)
 	ar rcs $@ $(RT_OBJS)
+
+install: $(BIN) $(LIB_RT)
+	@mkdir -p $(BINDIR)
+	install -m 755 $(BIN) $(BINDIR)/snovac
+	@echo "✓ Installed snovac CLI to $(BINDIR)/snovac"
+	@if ! echo "$$PATH" | grep -q "$(BINDIR)"; then \
+		echo ""; \
+		echo "To use 'snovac' directly in your terminal, ensure $(BINDIR) is in your PATH:"; \
+		echo "  export PATH=\"\$$PATH:$(BINDIR)\""; \
+		echo ""; \
+	fi
+
+uninstall:
+	rm -f $(BINDIR)/snovac
+	@echo "✓ Removed snovac from $(BINDIR)/snovac"
 
 $(BUILD)/%.o: %.c | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<
