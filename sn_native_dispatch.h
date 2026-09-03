@@ -5,7 +5,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "sn_socket.h"
-#include "sn_http.h"
 
 #ifdef __cplusplus
 extern "C" {

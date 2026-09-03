@@ -66,10 +66,12 @@ New-Item -ItemType Directory -Path $IncDir -Force | Out-Null
 
 # 3. Copy Binary and Libraries
 if (Test-Path $Bin) {
+    Copy-Item -Path $Bin -Destination (Join-Path $BinDir "sncli.exe") -Force
     Copy-Item -Path $Bin -Destination (Join-Path $BinDir "snovac.exe") -Force
-    Write-Host "[OK] Installed snovac CLI to $(Join-Path $BinDir 'snovac.exe')" -ForegroundColor Green
+    Write-Host "[OK] Installed sncli CLI to $(Join-Path $BinDir 'sncli.exe')" -ForegroundColor Green
+    Write-Host "[OK] Updated snovac CLI to $(Join-Path $BinDir 'snovac.exe')" -ForegroundColor Green
 } else {
-    Write-Error "Could not find snovac binary at '$Bin'. Please build snovac first."
+    Write-Error "Could not find binary at '$Bin'. Please build sncli first."
 }
 
 if (Test-Path $LibRt) {
