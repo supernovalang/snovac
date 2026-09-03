@@ -266,5 +266,23 @@ EOF
 assert "project: unregistered builtin.* namespace is still reported" 1 \
   "$(rc_of "$SNOVAC" check --project --no-typecheck "$PROJ/src/app/Main.snova")"
 
+# Native backend, target detection, and sandbox testing
+assert "target: --target-info outputs host and target" 1 \
+  "$("$SNOVAC" --target-info | grep -c 'Target OS:' || true)"
+
+assert "target: env override changes target OS" 1 \
+  "$(SNOVA_TARGET_OS=freebsd "$SNOVAC" --target-info | grep -c 'freebsd (overridden)' || true)"
+
+# Compile standalone native binary and test execution
+BUILD_OUT="$PROJ/bin_hello"
+assert "build: compile standalone native binary" 0 \
+  "$(rc_of "$SNOVAC" build "$RP/hello.snova" -o "$BUILD_OUT")"
+
+if [ -f "$BUILD_OUT" ]; then
+  got_native="$("$BUILD_OUT" 2>&1 || true)"
+  assert "build: native binary output matches run-pass" "$(cat "$RP/hello.stdout")" "$got_native"
+  rm -f "$BUILD_OUT"
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

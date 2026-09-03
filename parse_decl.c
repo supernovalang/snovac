@@ -50,7 +50,8 @@ static Modifiers parse_modifiers(P *p) {
         /* `async` is a modifier only when a declaration keyword follows;
          * otherwise it is an ordinary identifier. */
         if (at(p, SN_TOK_ASYNC) && (peek_at(p, 1)->kind == SN_TOK_METHOD ||
-                                    peek_at(p, 1)->kind == SN_TOK_FUNC)) {
+                                    peek_at(p, 1)->kind == SN_TOK_FUNC ||
+                                    peek_at(p, 1)->kind == SN_TOK_PULSAR)) {
             m.is_async = 1;
             advance_p(p);
             continue;
@@ -60,7 +61,8 @@ static Modifiers parse_modifiers(P *p) {
          * parse_stmt.c, `pulsar work()`). Recorded so check.c can enforce
          * SNOVA122 (return-type shape) and SNOVA124 (no direct call). */
         if (at(p, SN_TOK_PULSAR) && (peek_at(p, 1)->kind == SN_TOK_FUNC ||
-                                     peek_at(p, 1)->kind == SN_TOK_METHOD)) {
+                                     peek_at(p, 1)->kind == SN_TOK_METHOD ||
+                                     peek_at(p, 1)->kind == SN_TOK_ASYNC)) {
             m.is_pulsar = 1;
             advance_p(p);
             continue;

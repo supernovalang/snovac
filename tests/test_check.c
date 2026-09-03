@@ -908,6 +908,70 @@ static void test_optional_type_required(const char *tmp) {
     sn_arena_free(&w.arena);
 }
 
+static void test_pulsar_and_async_rules(const char *root) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/pulsar_async", root);
+    mkdir(dir, 0777);
+
+    write_file(dir, "p.snova",
+              "package pkg.pulsar_async\n"
+              "\n"
+              "pulsar func worker(): unit {\n"
+              "    return\n"
+              "}\n"
+              "\n"
+              "func caller(): unit {\n"
+              "    pulsar worker()\n"
+              "    return\n"
+              "}\n"
+              "\n"
+              "async func async_with_pulsar_stmt(): unit {\n"
+              "    pulsar worker()\n"
+              "    return\n"
+              "}\n"
+              "\n"
+              "async func async_with_direct_pulsar_call(): unit {\n"
+              "    worker()\n"
+              "    return\n"
+              "}\n"
+              "\n"
+              "async pulsar func invalid_combined(): unit {\n"
+              "    return\n"
+              "}\n");
+
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.pulsar_async", "caller");
+        CHECK("pulsar: legal pulsar launch in synchronous func passes", w.diag.error_count == 0);
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.pulsar_async", "async_with_pulsar_stmt");
+        CHECK("pulsar in async: pulsar statement in async func rejected with SNOVA0125",
+              w.diag.error_count > 0 && diag_has_code(&w, "SNOVA0125"));
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.pulsar_async", "async_with_direct_pulsar_call");
+        CHECK("pulsar in async: pulsar call in async func rejected with SNOVA0125",
+              w.diag.error_count > 0 && diag_has_code(&w, "SNOVA0125"));
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.pulsar_async", "invalid_combined");
+        CHECK("pulsar in async: combined async pulsar func rejected with SNOVA0125",
+              w.diag.error_count > 0 && diag_has_code(&w, "SNOVA0125"));
+        sn_arena_free(&w.arena);
+    }
+}
+
 int main(void) {
     char tmp[] = "/tmp/snovac_check_test_XXXXXX";
     if (!mkdtemp(tmp)) {
@@ -948,6 +1012,7 @@ int main(void) {
     test_public_any_in_stdlib_rejected(tmp);
     test_subsumption_non_null(tmp);
     test_optional_type_required(tmp);
+    test_pulsar_and_async_rules(tmp);
 
     printf("\n%d passed, %d failed\n", pass, fail);
     return fail == 0 ? 0 : 1;

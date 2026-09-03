@@ -6,14 +6,16 @@
 # coexist and neither depends on the other.
 
 CC      ?= cc
-CFLAGS  ?= -std=c11 -O2 -g
+CFLAGS  ?= -std=c11 -O2 -g -pthread
 CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
            -Wmissing-prototypes -Wconversion -Wno-sign-conversion
 BUILD   ?= build
 BIN      = $(BUILD)/snovac
 
-SRCS = main.c dump.c ast.c \
+SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd_build.c \
+       target.c native_backend.c pulsar.c async.c \
+       dump.c ast.c \
        lex.c lex_token.c lex_literal.c \
        parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
        parse_decl.c parse_decl_parts.c \

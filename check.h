@@ -101,6 +101,7 @@
  * implemented its own AST-based version of either check. */
 #define SNOVA_PULSAR_INVALID_RETURN 122
 #define SNOVA_PULSAR_DIRECT_CALL 124
+#define SNOVA_PULSAR_IN_ASYNC 125
 #define SNOVA_AWAIT_OUTSIDE_ASYNC 13
 
 #define SNOVA_OPTIONAL_TYPE_REQUIRED    200

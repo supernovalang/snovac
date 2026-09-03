@@ -205,6 +205,12 @@ Flow exec_stmt(Interp *in, Env *env, const SnStmt *s) {
     case SN_STMT_BREAK:    return FLOW_BREAK;
     case SN_STMT_CONTINUE: return FLOW_CONTINUE;
 
+    case SN_STMT_PULSAR:
+        if (s->expr) {
+            eval_expr(in, env, s->expr);
+        }
+        return in->failed ? FLOW_RETURN : FLOW_NORMAL;
+
     default:
         rt_error(in, SNOVA_UNSUPPORTED, s->span,
                  "this statement form is not executable yet");

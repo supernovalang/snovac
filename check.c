@@ -948,7 +948,11 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
             break;
         }
         if (callee_sym->kind == SN_SYM_FUNC || callee_sym->kind == SN_SYM_METHOD) {
-            if (callee_sym->decl->is_pulsar && !is_pulsar_launch_call) {
+            if (callee_sym->decl->is_pulsar && c->in_async_body) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_IN_ASYNC, e->span,
+                             "cannot call pulsar function `%s` inside an async function",
+                             callee_sym->name);
+            } else if (callee_sym->decl->is_pulsar && !is_pulsar_launch_call) {
                 sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_DIRECT_CALL, e->span,
                             "pulsar function `%s` cannot be called directly — use `pulsar %s(...)`",
                             callee_sym->name, callee_sym->name);
@@ -1508,6 +1512,10 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
     }
 
     case SN_STMT_PULSAR:
+        if (c->in_async_body) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_IN_ASYNC, s->span,
+                         "pulsar statements and functions cannot be used inside an async function");
+        }
         if (s->expr) {
             /* `pulsar work()` — the one place a direct call to a pulsar
              * function is legal (SNOVA124 forbids it everywhere else).
@@ -1641,6 +1649,11 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
     }
 
     c->current_return_type = sn_check_resolve_type(c, decl->ret);
+    if (decl->is_async && decl->is_pulsar) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_IN_ASYNC, decl->span,
+                     "function `%s` cannot be declared as both async and pulsar",
+                     decl->name ? decl->name : "<fn>");
+    }
     if (decl->is_pulsar && !is_allowed_pulsar_return(c, c->current_return_type)) {
         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_INVALID_RETURN, decl->span,
                     "pulsar function `%s` must return `unit`, `Channel<T>`, or `Select<T>`",
