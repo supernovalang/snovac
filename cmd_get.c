@@ -101,7 +101,9 @@ static int copy_dir_recursive(const char *src_dir, const char *dst_dir) {
     return 1;
 }
 
-/* ── Safe Git Clone (No Shell Interpolation) ──────────────────────────────── */
+#include <fcntl.h>
+
+/* ── Safe Git Clone (No Shell Interpolation, Silent Output) ───────────────── */
 
 static int run_git_clone_safe(const char *url, const char *version, const char *dest_dir) {
 #if defined(_WIN32)
@@ -109,6 +111,7 @@ static int run_git_clone_safe(const char *url, const char *version, const char *
     int argc = 0;
     argv[argc++] = "git";
     argv[argc++] = "clone";
+    argv[argc++] = "-q";
     if (version && version[0]) {
         argv[argc++] = "--branch";
         argv[argc++] = (char *)version;
@@ -126,6 +129,7 @@ static int run_git_clone_safe(const char *url, const char *version, const char *
     int argc = 0;
     argv[argc++] = "git";
     argv[argc++] = "clone";
+    argv[argc++] = "-q";
     if (version && version[0]) {
         argv[argc++] = "--branch";
         argv[argc++] = (char *)version;
@@ -139,6 +143,12 @@ static int run_git_clone_safe(const char *url, const char *version, const char *
     pid_t pid = fork();
     if (pid < 0) return -1;
     if (pid == 0) {
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
         execvp("git", argv);
         _exit(127);
     }
@@ -732,14 +742,12 @@ static int graph_resolve_node(DepGraph *g, DepNode *node) {
         }
     } else {
         if (!path_is_dir(node->local_dir)) {
-            printf("snovac get: fetching %s...\n", node->url);
             int rc = fetch_dependency(node->url, node->version, node->local_dir);
             if (rc != 0) {
                 fprintf(stderr, "error: failed to fetch dependency from %s\n", node->url);
                 g->stack_depth--;
                 return 1;
             }
-            printf("snovac get: fetched %s successfully\n", node->id);
         }
 
         char mod_path[SNOVAC_PATH_MAX + 32];
@@ -791,6 +799,108 @@ static void graph_free(DepGraph *g) {
         e = next;
     }
     g->edges = NULL;
+}
+
+static void print_dep_subtree(DepGraph *g, const char *pkg_id, int depth,
+                              const char *path_stack[], int stack_depth, int *vuln_count) {
+    DepNode *node = graph_find_node(g, pkg_id);
+    if (!node) return;
+
+    char prefix[64] = {0};
+    if (depth == 0) {
+        prefix[0] = '\0';
+    } else if (depth == 1) {
+        snprintf(prefix, sizeof(prefix), "-> ");
+    } else {
+        int eq_count = depth - 1;
+        if (eq_count > 20) eq_count = 20;
+        for (int i = 0; i < eq_count; i++) prefix[i] = '=';
+        prefix[eq_count] = '>';
+        prefix[eq_count + 1] = ' ';
+        prefix[eq_count + 2] = '\0';
+    }
+
+    char vuln_tag[128] = {0};
+    if (strncmp(node->url, "http://", 7) == 0) {
+        snprintf(vuln_tag, sizeof(vuln_tag), " [vulnerability: unencrypted http transport]");
+        (*vuln_count)++;
+    }
+
+    /* Check cycle in active print stack */
+    int is_cycle = 0;
+    for (int i = 0; i < stack_depth; i++) {
+        if (strcmp(path_stack[i], pkg_id) == 0) {
+            is_cycle = 1;
+            break;
+        }
+    }
+
+    if (is_cycle) {
+        printf("%s%s@%s [cyclic reference]%s\n", prefix, node->id,
+               node->version[0] ? node->version : "1.0.0", vuln_tag);
+        return;
+    }
+
+    printf("%s%s@%s%s\n", prefix, node->id, node->version[0] ? node->version : "1.0.0", vuln_tag);
+
+    if (stack_depth < 25) {
+        path_stack[stack_depth] = pkg_id;
+
+        /* Collect and sort outgoing child edges */
+        const char *children[64];
+        int child_count = 0;
+        for (DepEdge *e = g->edges; e && child_count < 64; e = e->next) {
+            if (strcmp(e->from, pkg_id) == 0) {
+                children[child_count++] = e->to;
+            }
+        }
+        for (int i = 0; i < child_count - 1; i++) {
+            for (int j = i + 1; j < child_count; j++) {
+                if (strcmp(children[i], children[j]) > 0) {
+                    const char *tmp = children[i];
+                    children[i] = children[j];
+                    children[j] = tmp;
+                }
+            }
+        }
+
+        for (int i = 0; i < child_count; i++) {
+            print_dep_subtree(g, children[i], depth + 1, path_stack, stack_depth + 1, vuln_count);
+        }
+    }
+}
+
+static void print_dependency_graph(DepGraph *g, int *out_vulns) {
+    printf("snova: dependency:\n\n");
+    int vulns = 0;
+
+    /* Collect direct root dependencies */
+    DepNode *directs[128];
+    int direct_count = 0;
+    for (DepNode *n = g->nodes; n && direct_count < 128; n = n->next) {
+        if (n->is_direct && !n->is_root) {
+            directs[direct_count++] = n;
+        }
+    }
+
+    /* Sort direct dependencies alphabetically */
+    for (int i = 0; i < direct_count - 1; i++) {
+        for (int j = i + 1; j < direct_count; j++) {
+            if (strcmp(directs[i]->id, directs[j]->id) > 0) {
+                DepNode *tmp = directs[i];
+                directs[i] = directs[j];
+                directs[j] = tmp;
+            }
+        }
+    }
+
+    const char *path_stack[32];
+    for (int i = 0; i < direct_count; i++) {
+        print_dep_subtree(g, directs[i]->id, 0, path_stack, 0, &vulns);
+    }
+    printf("\n");
+
+    if (out_vulns) *out_vulns = vulns;
 }
 
 /* ── CLI Command Implementation ──────────────────────────────────────────── */
@@ -912,6 +1022,10 @@ int cmd_get_project(const char *proj_path, const char *url, const char *version)
         return 1;
     }
 
+    /* Print structured dependency hierarchy and vulnerability audit */
+    int vuln_count = 0;
+    print_dependency_graph(&graph, &vuln_count);
+
     /* Reconstruct root manifest dependencies */
     manifest_free(&root_manifest);
     memset(&root_manifest.direct, 0, sizeof(root_manifest.direct));
@@ -951,8 +1065,8 @@ int cmd_get_project(const char *proj_path, const char *url, const char *version)
         return 1;
     }
 
-    printf("snovac get: updated %s (%d direct, %d indirect dependencies)\n",
-           manifest_path, root_manifest.direct_count, root_manifest.indirect_count);
+    printf("snova: updated %s (%d direct, %d indirect dependencies, %d vulnerabilities)\n",
+           manifest_path, root_manifest.direct_count, root_manifest.indirect_count, vuln_count);
 
     manifest_free(&root_manifest);
     graph_free(&graph);
