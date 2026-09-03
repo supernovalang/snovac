@@ -27,9 +27,6 @@ static const BMember ARRAY_MEMBERS[] = {
     {"length", B_INT},
     {"len", B_INT},
     {"push", B_UNIT},
-    {"pop", B_ELEM},
-    {"clear", B_UNIT},
-    {"isEmpty", B_BOOL},
     {"get", B_ELEM},
     {"set", B_UNIT},
     {"map", B_ARRAY_ANY},
@@ -176,6 +173,7 @@ SnTypeRep *sn_builtin_member(SnTypeTable *t, SnInternTable *it, const SnTypeRep 
 
 SnTypeRep *sn_builtin_index_result(SnTypeTable *t, SnInternTable *it,
                                    const SnTypeRep *recv) {
+    (void)it;
     if (!recv) {
         return NULL;
     }
@@ -183,22 +181,7 @@ SnTypeRep *sn_builtin_index_result(SnTypeTable *t, SnInternTable *it,
         return recv->nargs == 1 ? recv->args[0] : sn_type_any(t);
     }
     if (recv->tag == SN_T_STRING) {
-        return sn_type_string(t); /* same choice as charAt — see STRING_MEMBERS */
-    }
-    if (recv->tag != SN_T_NAMED || !recv->decl) {
-        return NULL;
-    }
-    const char *name = recv->decl->name;
-    if (name == sn_intern_cstr(it, "Map")) {
-        /* Map<K, V> yields V. */
-        return recv->nargs == 2 ? recv->args[1] : sn_type_any(t);
-    }
-    if (name == sn_intern_cstr(it, "List")) {
-        return recv->nargs == 1 ? recv->args[0] : sn_type_any(t);
-    }
-    if (name == sn_intern_cstr(it, "Bytes") || name == sn_intern_cstr(it, "JsonValue") ||
-        name == sn_intern_cstr(it, "JsonArray")) {
-        return sn_type_any(t);
+        return sn_type_string(t);
     }
     return NULL;
 }
