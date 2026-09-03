@@ -10,6 +10,11 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(_WIN32)
+#include <direct.h>
+#include <io.h>
+#define mkdir(dir, mode) _mkdir(dir)
+#endif
 
 #include "../arena.h"
 #include "../check.h"
@@ -61,14 +66,40 @@ static void world_init(World *w) {
     sn_arena_init(&w->arena, 0);
     sn_intern_init(&w->intern, &w->arena);
     sn_diag_init(&w->diag, "<test>", "", 0);
+#if defined(_WIN32)
+    w->diag_buf = NULL;
+    w->diag_buf_len = 0;
+    w->diag.out = tmpfile();
+#else
     w->diag.out = open_memstream(&w->diag_buf, &w->diag_buf_len);
+#endif
     sn_pkggraph_init(&w->graph, &w->arena, &w->intern, &w->diag);
     sn_types_init(&w->types, &w->arena);
     sn_resolver_init(&w->resolver, &w->arena, &w->intern, &w->diag, &w->graph, &w->types);
     sn_checker_init(&w->checker, &w->arena, &w->intern, &w->diag, &w->resolver, &w->types);
 }
 
-static void world_finish_diag(World *w) { fclose(w->diag.out); }
+static void world_finish_diag(World *w) {
+#if defined(_WIN32)
+    if (w->diag.out) {
+        fflush(w->diag.out);
+        long sz = ftell(w->diag.out);
+        if (sz >= 0) {
+            rewind(w->diag.out);
+            w->diag_buf = (char *)malloc((size_t)sz + 1);
+            if (w->diag_buf) {
+                size_t read_bytes = fread(w->diag_buf, 1, (size_t)sz, w->diag.out);
+                w->diag_buf[read_bytes] = '\0';
+                w->diag_buf_len = read_bytes;
+            }
+        }
+        fclose(w->diag.out);
+        w->diag.out = NULL;
+    }
+#else
+    fclose(w->diag.out);
+#endif
+}
 
 static int diag_has_code(World *w, const char *code /* e.g. "SNOVA0131" */) {
     return w->diag_buf && strstr(w->diag_buf, code) != NULL;

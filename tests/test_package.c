@@ -27,6 +27,11 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(_WIN32)
+#include <direct.h>
+#include <io.h>
+#define mkdir(dir, mode) _mkdir(dir)
+#endif
 
 #include "../arena.h"
 #include "../diag.h"

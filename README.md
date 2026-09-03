@@ -4,7 +4,22 @@ The official, reference compiler for **Snovalang** written in pure, zero-depende
 
 [![Release](https://github.com/supernovalang/snovac/actions/workflows/release.yml/badge.svg)](https://github.com/supernovalang/snovac/actions/workflows/release.yml)
 
-## Quick Install (One-Line URL | Bash)
+## Quick Install
+
+### Windows (PowerShell)
+
+Install `snovac` natively on Windows with a single PowerShell command:
+
+```powershell
+irm https://raw.githubusercontent.com/supernovalang/snovac/master/install.ps1 | iex
+```
+
+Or from an existing clone:
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+### macOS & Linux (Bash)
 
 Install `snovac` instantly on macOS or Linux with a single command:
 

@@ -9,6 +9,7 @@
 
 typedef struct {
     char source_root[SNOVAC_PATH_MAX]; /* always set */
+    char manifest_dir[SNOVAC_PATH_MAX]; /* directory containing manifest, if has_manifest */
     char deps_root[SNOVAC_PATH_MAX];   /* "" when there is nothing vendored */
     char cache_root[SNOVAC_PATH_MAX];  /* offline precompiled binaries cache */
     int has_manifest;

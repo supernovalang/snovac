@@ -16,6 +16,8 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#include <direct.h>
+#include <io.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #elif defined(__linux__)
@@ -37,7 +39,15 @@ char g_exe_dir[SNOVAC_PATH_MAX] = {0};
 static int resolve_exe_path(char *out, size_t out_sz) {
 #if defined(_WIN32)
   DWORD n = GetModuleFileNameA(NULL, out, (DWORD)out_sz);
-  return (n > 0 && n < out_sz) ? 1 : 0;
+  if (n > 0 && n < out_sz) {
+    for (size_t i = 0; i < (size_t)n; i++) {
+      if (out[i] == '\\') {
+        out[i] = '/';
+      }
+    }
+    return 1;
+  }
+  return 0;
 #elif defined(__APPLE__)
   char tmp[SNOVAC_PATH_MAX];
   uint32_t tmp_size = (uint32_t)sizeof(tmp);
@@ -82,7 +92,11 @@ static int resolve_exe_path_via_path_env(const char *argv0, char *out,
   }
   const char *p = path_env;
   while (p && *p) {
+#if defined(_WIN32)
+    const char *sep = strchr(p, ';');
+#else
     const char *sep = strchr(p, ':');
+#endif
     size_t len = sep ? (size_t)(sep - p) : strlen(p);
     if (len > 0 && len < SNOVAC_PATH_MAX - 1) {
       char dir[SNOVAC_PATH_MAX];
@@ -94,6 +108,13 @@ static int resolve_exe_path_via_path_env(const char *argv0, char *out,
         normalize_path_into(candidate, out, out_sz);
         return 1;
       }
+#if defined(_WIN32)
+      snprintf(candidate, sizeof(candidate), "%s/%s.exe", dir, argv0);
+      if (path_is_file(candidate)) {
+        normalize_path_into(candidate, out, out_sz);
+        return 1;
+      }
+#endif
     }
     p = sep ? sep + 1 : NULL;
   }
@@ -108,7 +129,7 @@ void sn_set_exe_dir(const char *argv0) {
     return;
   }
 
-  if (argv0 && strchr(argv0, '/')) {
+  if (argv0 && (strchr(argv0, '/') || strchr(argv0, '\\'))) {
     normalize_path_into(argv0, exe_path, sizeof(exe_path));
     dirname_into(exe_path, g_exe_dir, sizeof(g_exe_dir));
     return;
@@ -227,14 +248,25 @@ int find_builtin_root(const char *start_dir, char *out, size_t out_sz) {
 
 void dirname_into(const char *path, char *out, size_t out_sz) {
   const char *slash = strrchr(path, '/');
+#if defined(_WIN32)
+  const char *bslash = strrchr(path, '\\');
+  if (bslash && (!slash || bslash > slash)) {
+    slash = bslash;
+  }
+#endif
   if (!slash) {
     snprintf(out, out_sz, ".");
     return;
   }
   size_t n = (size_t)(slash - path);
   if (n == 0) {
-    n = 1; /* "/" */
+    n = 1; /* "/" or "\" */
   }
+#if defined(_WIN32)
+  if (n == 2 && path[1] == ':') {
+    n = 3;
+  }
+#endif
   if (n >= out_sz) {
     n = out_sz - 1;
   }
@@ -243,20 +275,35 @@ void dirname_into(const char *path, char *out, size_t out_sz) {
 }
 
 int path_is_dir(const char *path) {
+  if (!path || !path[0]) return 0;
+  char norm[SNOVAC_PATH_MAX];
+  normalize_path_into(path, norm, sizeof(norm));
   struct stat st;
-  return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+  return stat(norm, &st) == 0 && S_ISDIR(st.st_mode);
 }
 
 int path_is_file(const char *path) {
+  if (!path || !path[0]) return 0;
+  char norm[SNOVAC_PATH_MAX];
+  normalize_path_into(path, norm, sizeof(norm));
   struct stat st;
-  return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+  return stat(norm, &st) == 0 && S_ISREG(st.st_mode);
 }
 
 /* Recursively creates `dir` and any missing parent directories (mkdir -p). */
 static int mkdir_p(const char *dir) {
-  if (!dir || !dir[0] || strcmp(dir, ".") == 0 || strcmp(dir, "/") == 0) {
+  if (!dir || !dir[0] || strcmp(dir, ".") == 0 || strcmp(dir, "/") == 0 ||
+      strcmp(dir, "\\") == 0) {
     return 1;
   }
+#if defined(_WIN32)
+  if (strlen(dir) == 2 && dir[1] == ':') {
+    return 1;
+  }
+  if (strlen(dir) == 3 && dir[1] == ':' && (dir[2] == '/' || dir[2] == '\\')) {
+    return 1;
+  }
+#endif
   struct stat st;
   if (stat(dir, &st) == 0) {
     return S_ISDIR(st.st_mode);
@@ -270,9 +317,15 @@ static int mkdir_p(const char *dir) {
     }
   }
 
+#if defined(_WIN32)
+  if (_mkdir(dir) != 0 && errno != EEXIST) {
+    return 0;
+  }
+#else
   if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
     return 0;
   }
+#endif
   return 1;
 }
 
@@ -286,10 +339,34 @@ void ensure_parent_dir_exists(const char *path) {
 }
 
 void normalize_path_into(const char *path, char *out, size_t out_sz) {
+  if (!path || !path[0]) {
+    if (out && out_sz > 0) out[0] = '\0';
+    return;
+  }
   char resolved[SNOVAC_PATH_MAX];
+#if defined(_WIN32)
+  const char *src = path;
+  char msys_buf[SNOVAC_PATH_MAX];
+  /* Handle MSYS/Git-Bash/Cygwin absolute paths like "/c/Users/..." -> "C:/Users/..." */
+  if (path[0] == '/' && isalpha((unsigned char)path[1]) && (path[2] == '/' || path[2] == '\0')) {
+    snprintf(msys_buf, sizeof(msys_buf), "%c:%s", (char)toupper((unsigned char)path[1]), path + 2);
+    src = msys_buf;
+  }
+  if (_fullpath(resolved, src, sizeof(resolved)) != NULL) {
+    for (char *p = resolved; *p; p++) {
+      if (*p == '\\') {
+        *p = '/';
+      }
+    }
+    snprintf(out, out_sz, "%s", resolved);
+  } else if (out != path) {
+    snprintf(out, out_sz, "%s", src);
+  }
+#else
   if (realpath(path, resolved) != NULL) {
     snprintf(out, out_sz, "%s", resolved);
   } else if (out != path) {
     snprintf(out, out_sz, "%s", path);
   }
+#endif
 }

@@ -107,19 +107,19 @@ static int copy_dir_recursive(const char *src_dir, const char *dst_dir) {
 
 static int run_git_clone_safe(const char *url, const char *version, const char *dest_dir) {
 #if defined(_WIN32)
-    char *argv[10];
+    const char *argv[10];
     int argc = 0;
     argv[argc++] = "git";
     argv[argc++] = "clone";
     argv[argc++] = "-q";
     if (version && version[0]) {
         argv[argc++] = "--branch";
-        argv[argc++] = (char *)version;
+        argv[argc++] = version;
     }
     argv[argc++] = "--depth";
     argv[argc++] = "1";
-    argv[argc++] = (char *)url;
-    argv[argc++] = (char *)dest_dir;
+    argv[argc++] = url;
+    argv[argc++] = dest_dir;
     argv[argc] = NULL;
 
     intptr_t status = _spawnvp(_P_WAIT, "git", argv);
@@ -170,17 +170,20 @@ static int fetch_dependency(const char *url_or_path, const char *version, const 
 
     /* Check if local filesystem path */
     if (strncmp(url_or_path, "file://", 7) == 0 || path_is_dir(url_or_path) ||
-        url_or_path[0] == '/' || url_or_path[0] == '.') {
+        url_or_path[0] == '/' || url_or_path[0] == '.' || url_or_path[0] == '\\' ||
+        (isalpha((unsigned char)url_or_path[0]) && url_or_path[1] == ':')) {
         const char *local_src = (strncmp(url_or_path, "file://", 7) == 0) ? url_or_path + 7 : url_or_path;
-        if (path_is_dir(local_src)) {
+        char norm_src[SNOVAC_PATH_MAX];
+        normalize_path_into(local_src, norm_src, sizeof(norm_src));
+        if (path_is_dir(norm_src)) {
             if (version && version[0]) {
                 char v_tag[128];
                 snprintf(v_tag, sizeof(v_tag), "v%s", (version[0] == 'v' || version[0] == 'V') ? version + 1 : version);
-                if (run_git_clone_safe(local_src, v_tag, target_dir) == 0) return 0;
-                if (run_git_clone_safe(local_src, version, target_dir) == 0) return 0;
+                if (run_git_clone_safe(norm_src, v_tag, target_dir) == 0) return 0;
+                if (run_git_clone_safe(norm_src, version, target_dir) == 0) return 0;
             }
-            if (run_git_clone_safe(local_src, NULL, target_dir) == 0) return 0;
-            if (copy_dir_recursive(local_src, target_dir)) return 0;
+            if (run_git_clone_safe(norm_src, NULL, target_dir) == 0) return 0;
+            if (copy_dir_recursive(norm_src, target_dir)) return 0;
         }
     }
 
@@ -593,7 +596,8 @@ static void normalize_module_info(const char *input, const char *version_overrid
     snprintf(out_ver, out_ver_sz, "%s", ver);
 
     /* Check local path */
-    if (strncmp(raw, "file://", 7) == 0 || path_is_dir(raw) || raw[0] == '/' || raw[0] == '.') {
+    if (strncmp(raw, "file://", 7) == 0 || path_is_dir(raw) || raw[0] == '/' || raw[0] == '.' ||
+        raw[0] == '\\' || (isalpha((unsigned char)raw[0]) && raw[1] == ':')) {
         const char *local_path = (strncmp(raw, "file://", 7) == 0) ? raw + 7 : raw;
         snprintf(out_url, out_url_sz, "%s", local_path);
 
@@ -607,16 +611,22 @@ static void normalize_module_info(const char *input, const char *version_overrid
             } else if (local_m.module_name[0]) {
                 snprintf(out_id, out_id_sz, "%s", local_m.module_name);
             } else {
-                const char *slash = strrchr(local_path, '/');
+                const char *s1 = strrchr(local_path, '/');
+                const char *s2 = strrchr(local_path, '\\');
+                const char *slash = (s2 && (!s1 || s2 > s1)) ? s2 : s1;
                 snprintf(out_id, out_id_sz, "%s", slash ? slash + 1 : local_path);
             }
             manifest_free(&local_m);
         } else {
-            const char *slash = strrchr(local_path, '/');
+            const char *s1 = strrchr(local_path, '/');
+            const char *s2 = strrchr(local_path, '\\');
+            const char *slash = (s2 && (!s1 || s2 > s1)) ? s2 : s1;
             snprintf(out_id, out_id_sz, "%s", slash ? slash + 1 : local_path);
         }
 
-        const char *slash = strrchr(local_path, '/');
+        const char *s1 = strrchr(local_path, '/');
+        const char *s2 = strrchr(local_path, '\\');
+        const char *slash = (s2 && (!s1 || s2 > s1)) ? s2 : s1;
         snprintf(out_rel_dir, out_rel_dir_sz, "%s", slash ? slash + 1 : local_path);
         return;
     }
@@ -943,10 +953,12 @@ int cmd_get_project(const char *proj_path, const char *url, const char *version)
     char manifest_path[SNOVAC_PATH_MAX + 32];
     char deps_root[SNOVAC_PATH_MAX];
 
-    if (proj.has_manifest) {
-        dirname_into(proj.source_root, proj_root, sizeof(proj_root));
-    } else {
+    if (proj.has_manifest && proj.manifest_dir[0]) {
+        snprintf(proj_root, sizeof(proj_root), "%s", proj.manifest_dir);
+    } else if (path_is_dir(proj_path ? proj_path : ".")) {
         snprintf(proj_root, sizeof(proj_root), "%s", proj_path ? proj_path : ".");
+    } else {
+        dirname_into(proj_path ? proj_path : ".", proj_root, sizeof(proj_root));
     }
 
     if (!find_dir_manifest(proj_root, manifest_path, sizeof(manifest_path))) {

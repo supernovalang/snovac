@@ -58,7 +58,7 @@ static void update_target_flags(SnTargetInfo *target) {
     if (target->os == SN_OS_WINDOWS) {
         snprintf(target->exe_ext, sizeof(target->exe_ext), ".exe");
         snprintf(target->cflags, sizeof(target->cflags), "-std=c11 -O2");
-        snprintf(target->ldflags, sizeof(target->ldflags), "-lws2_32");
+        snprintf(target->ldflags, sizeof(target->ldflags), "-lws2_32 -lpthread");
     } else if (target->os == SN_OS_DARWIN) {
         target->exe_ext[0] = '\0';
         snprintf(target->cflags, sizeof(target->cflags), "-std=c11 -O2 -pthread");

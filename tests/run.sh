@@ -285,7 +285,8 @@ if [ -f "$BUILD_OUT" ]; then
 fi
 
 # ── snovac get & dependency graph tests ─────────────────────────────────────
-GET_TEST_DIR="$(mktemp -d)"
+GET_TEST_DIR="$(pwd)/build/get_test_$$"
+mkdir -p "$GET_TEST_DIR"
 
 # Fixture: depC
 mkdir -p "$GET_TEST_DIR/depC/src"
@@ -452,7 +453,8 @@ assert "get: diamond project check passes" 0 \
   "$(rc_of "$SNOVAC" check --project "$GET_TEST_DIR/diamond_app/src/app/Main.snova")"
 
 # Test: get with no args and no manifest fails cleanly
-EMPTY_DIR="$(mktemp -d)"
+EMPTY_DIR="$(pwd)/build/empty_test_$$"
+mkdir -p "$EMPTY_DIR"
 assert "get: no args without manifest errors cleanly" 2 \
   "$(rc_of "$SNOVAC" get --project "$EMPTY_DIR")"
 rm -rf "$EMPTY_DIR"

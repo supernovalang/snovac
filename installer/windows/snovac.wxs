@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- snovac.wxs — WiX Source file for Native Windows MSI Installer -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Product Id="*"
+             Name="Snovalang Compiler (snovac)"
+             Language="1033"
+             Version="0.0.1.1"
+             Manufacturer="Snovalang Project"
+             UpgradeCode="9E52D2E4-617F-4BFA-8116-29177F8CF99C">
+        
+        <Package InstallerVersion="300"
+                 Compressed="yes"
+                 InstallScope="perUser"
+                 Platform="x64" />
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+
+        <Feature Id="ProductFeature" Title="Snovalang Compiler" Level="1">
+            <ComponentGroupRef Id="ProductComponents" />
+        </Feature>
+    </Product>
+
+    <Fragment>
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="LocalAppDataFolder">
+                <Directory Id="INSTALLFOLDER" Name="Snova">
+                    <Directory Id="BINDIR" Name="bin" />
+                    <Directory Id="LIBDIR" Name="lib" />
+                    <Directory Id="INCDIR" Name="include" />
+                </Directory>
+            </Directory>
+        </Directory>
+    </Fragment>
+
+    <Fragment>
+        <ComponentGroup Id="ProductComponents">
+            <Component Id="SnovacExe" Directory="BINDIR" Guid="7BF0030B-E20C-44FE-B398-75C73595B036">
+                <File Id="snovac.exe" Source="..\..\build\snovac.exe" KeyPath="yes" />
+                <Environment Id="PATH"
+                             Name="PATH"
+                             Value="[BINDIR]"
+                             Permanent="no"
+                             Part="last"
+                             Action="set"
+                             System="no" />
+            </Component>
+            <Component Id="LibSnovart" Directory="LIBDIR" Guid="1C2D81BE-9238-4C3D-8884-AC060879685B">
+                <File Id="libsnovart.a" Source="..\..\build\libsnovart.a" KeyPath="yes" />
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+</Wix>

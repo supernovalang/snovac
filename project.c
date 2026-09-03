@@ -51,6 +51,7 @@ void project_discover(const char *path, SnProject *out) {
     return;
   }
   out->has_manifest = 1;
+  normalize_path_into(manifest_dir, out->manifest_dir, sizeof(out->manifest_dir));
 
   char src_dir[SNOVAC_PATH_MAX + 16];
   snprintf(src_dir, sizeof(src_dir), "%s/src", manifest_dir);

@@ -33,6 +33,23 @@ OS="$(uname -s)"
 case "$OS" in
     Linux*)     PLATFORM="linux" ;;
     Darwin*)    PLATFORM="darwin" ;;
+    MINGW*|MSYS*|CYGWIN*|Windows_NT*)
+        PLATFORM="windows"
+        if command -v powershell.exe >/dev/null 2>&1; then
+            echo "${CYAN}==> Windows environment detected. Invoking native Windows installer...${RESET}"
+            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
+            if [ -f "$SCRIPT_DIR/scripts/install_windows.ps1" ]; then
+                powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/scripts/install_windows.ps1"
+                exit 0
+            elif [ -f "$SCRIPT_DIR/install.ps1" ]; then
+                powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1"
+                exit 0
+            else
+                powershell.exe -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex"
+                exit 0
+            fi
+        fi
+        ;;
     *)
         echo "${RED}Error: Unsupported Operating System: $OS${RESET}" >&2
         exit 1

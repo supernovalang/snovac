@@ -359,11 +359,12 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
 
   /* Compile runner C code to final binary using target compiler & flags */
   char cmd[4096];
-  snprintf(cmd, sizeof(cmd), "%s %s -o %s %s %s && rm -f %s",
+  snprintf(cmd, sizeof(cmd), "%s %s -o %s %s %s",
            target->c_compiler, target->cflags, output_path, c_source_path,
-           target->ldflags, c_source_path);
+           target->ldflags);
 
   int status = system(cmd);
+  remove(c_source_path);
   if (status != 0) {
     fprintf(stderr,
             "error: compilation to native binary failed with exit status %d "
@@ -513,11 +514,12 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
   }
 
   char cmd[4096];
-  snprintf(cmd, sizeof(cmd), "%s %s -I%s -o %s %s %s %s && rm -f %s",
+  snprintf(cmd, sizeof(cmd), "%s %s -I%s -o %s %s %s %s",
            target->c_compiler, target->cflags, inc_dir, output_path,
-           c_source_path, lib_path, target->ldflags, c_source_path);
+           c_source_path, lib_path, target->ldflags);
 
   int status = system(cmd);
+  remove(c_source_path);
   if (status != 0) {
     fprintf(stderr,
             "error: compilation of standalone runtime binary failed (command: "

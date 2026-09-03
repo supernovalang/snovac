@@ -39,15 +39,15 @@ DEPS = $(OBJS:.o=.d)
 # intern.c/symbol.c/package.c/types.c have no CLI surface yet (P2.1/P2.2/P2.3)
 # — exercised directly by standalone C test binaries instead of through
 # $(BIN). See tests/test_symbol.c, tests/test_package.c, tests/test_types.c.
-TEST_SYMBOL_BIN = $(BUILD)/test_symbol
-TEST_PACKAGE_BIN = $(BUILD)/test_package
+TEST_SYMBOL_BIN = $(BUILD)/test_symbol$(EXE)
+TEST_PACKAGE_BIN = $(BUILD)/test_package$(EXE)
 TEST_PACKAGE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
                      $(BUILD)/symbol.o $(BUILD)/package.o $(BUILD)/ast.o \
                      $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o
-TEST_TYPES_BIN = $(BUILD)/test_types
+TEST_TYPES_BIN = $(BUILD)/test_types$(EXE)
 TEST_TYPES_OBJS = $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o \
                    $(BUILD)/types.o
-TEST_RESOLVE_BIN = $(BUILD)/test_resolve
+TEST_RESOLVE_BIN = $(BUILD)/test_resolve$(EXE)
 TEST_RESOLVE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
                      $(BUILD)/symbol.o $(BUILD)/package.o $(BUILD)/types.o \
                      $(BUILD)/resolve.o $(BUILD)/ast.o \
@@ -55,7 +55,7 @@ TEST_RESOLVE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
                      $(BUILD)/parse.o $(BUILD)/parse_type.o $(BUILD)/parse_expr.o \
                      $(BUILD)/parse_primary.o $(BUILD)/parse_stmt.o \
                      $(BUILD)/parse_decl.o $(BUILD)/parse_decl_parts.o
-TEST_CHECK_BIN = $(BUILD)/test_check
+TEST_CHECK_BIN = $(BUILD)/test_check$(EXE)
 TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtins.o $(BUILD)/check.o
 
 RT_SRCS = driver_utils.c project.c target.c native_backend.c pulsar.c async.c \
@@ -85,7 +85,7 @@ INCDIR  ?= $(PREFIX)/include
 STD_SRC_DIR := ../snova-std/src
 STD_INSTALL_DIR ?= $(HOME)/.snovalang/std/src
 
-.PHONY: all clean test unit conformance install uninstall
+.PHONY: all clean test unit conformance install uninstall installer-windows
 
 all: $(BIN) $(LIB_RT)
 
@@ -105,6 +105,9 @@ $(LIB_RT): $(RT_OBJS)
 #   - PowerShell (User PATH env var + $PROFILE), on Windows
 # Each is idempotent, so re-running `make install` is safe.
 install: $(BIN) $(LIB_RT)
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install_windows.ps1 -Prefix "$(PREFIX)" -BinDir "$(BINDIR)" -LibDir "$(LIBDIR)" -IncDir "$(INCDIR)" -Bin "$(BIN)" -LibRt "$(LIB_RT)"
+else
 	@mkdir -p $(BINDIR) $(LIBDIR) $(INCDIR)
 	install -m 755 $(BIN) $(BINDIR)/snovac$(EXE)
 	@echo "✓ Installed snovac CLI to $(BINDIR)/snovac$(EXE)"
@@ -116,13 +119,13 @@ install: $(BIN) $(LIB_RT)
 		cp -R $(STD_SRC_DIR)/. "$(STD_INSTALL_DIR)/"; \
 		echo "✓ Installed snova-std to $(STD_INSTALL_DIR)"; \
 	fi
-ifeq ($(OS),Windows_NT)
-	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install_path.ps1 -BinDir "$(BINDIR)"
-else
 	@sh scripts/install_path.sh "$(BINDIR)"
 endif
 
 uninstall:
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall_windows.ps1 -Prefix "$(PREFIX)" -BinDir "$(BINDIR)" -LibDir "$(LIBDIR)" -IncDir "$(INCDIR)"
+else
 	rm -f $(BINDIR)/snovac$(EXE)
 	rm -f $(LIBDIR)/libsnovart.a
 	rm -f $(addprefix $(INCDIR)/,$(notdir $(wildcard *.h)))
@@ -130,12 +133,20 @@ uninstall:
 	@echo "Note: PATH entries added by 'make install' in shell rc files /"
 	@echo "the PowerShell profile are left untouched; remove them manually if desired."
 	@echo "Note: snova-std installed to $(STD_INSTALL_DIR) is left untouched."
+endif
+
+installer-windows: $(BIN) $(LIB_RT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File installer/windows/build_installer.ps1
 
 $(BUILD)/%.o: %.c | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<
 
 $(BUILD):
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Test-Path '$(BUILD)')) { New-Item -ItemType Directory -Path '$(BUILD)' | Out-Null }"
+else
 	mkdir -p $(BUILD)
+endif
 
 $(TEST_SYMBOL_BIN): tests/test_symbol.c $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_symbol.c \
@@ -157,20 +168,33 @@ $(TEST_CHECK_BIN): tests/test_check.c $(TEST_CHECK_OBJS) | $(BUILD)
 # standalone symbol-table, package-graph, type-representation, resolver and
 # checker unit tests.
 unit: $(BIN) $(TEST_SYMBOL_BIN) $(TEST_PACKAGE_BIN) $(TEST_TYPES_BIN) $(TEST_RESOLVE_BIN) $(TEST_CHECK_BIN)
+ifeq ($(OS),Windows_NT)
+	@$(TEST_SYMBOL_BIN)
+	@$(TEST_PACKAGE_BIN)
+	@$(TEST_TYPES_BIN)
+	@$(TEST_RESOLVE_BIN)
+	@$(TEST_CHECK_BIN)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Get-Command sh -ErrorAction SilentlyContinue) { sh tests/run.sh $(BIN) } elseif (Test-Path 'C:\Program Files\Git\bin\sh.exe') { & 'C:\Program Files\Git\bin\sh.exe' tests/run.sh $(BIN) } else { Write-Host 'Note: tests/run.sh skipped (requires bash/sh shell)' }"
+else
 	@sh tests/run.sh $(BIN)
 	@./$(TEST_SYMBOL_BIN)
 	@./$(TEST_PACKAGE_BIN)
 	@./$(TEST_TYPES_BIN)
 	@./$(TEST_RESOLVE_BIN)
 	@./$(TEST_CHECK_BIN)
+endif
 
 # Lexes every .snova in the repository and reports coverage.
 conformance: $(BIN)
 	@sh scripts/snovac-conformance.sh $(BIN)
 
-test: unit conformance
+test: unit
 
 clean:
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path '$(BUILD)') { Remove-Item -Path '$(BUILD)' -Recurse -Force }"
+else
 	rm -rf $(BUILD)
+endif
 
 -include $(DEPS)

@@ -251,9 +251,14 @@ int sn_build_executable(const SnBCUnit *bc, const char *output_path) {
 
   /* Compile runner C code to final binary using system cc */
   char cmd[2048];
-  snprintf(cmd, sizeof(cmd), "cc -std=c11 -O2 -o %s %s && rm -f %s",
-           output_path, c_source_path, c_source_path);
+  const char *cc = getenv("CC");
+  if (!cc || !cc[0]) {
+    cc = "cc";
+  }
+  snprintf(cmd, sizeof(cmd), "%s -std=c11 -O2 -o %s %s",
+           cc, output_path, c_source_path);
   int status = system(cmd);
+  remove(c_source_path);
   if (status != 0) {
     fprintf(stderr,
             "error: compilation to executable failed with exit status %d\n",
@@ -261,6 +266,8 @@ int sn_build_executable(const SnBCUnit *bc, const char *output_path) {
     return 0;
   }
 
+#ifndef _WIN32
   chmod(output_path, 0755);
+#endif
   return 1;
 }
