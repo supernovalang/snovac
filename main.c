@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* `tidy [--project] [<path>]`: cleans unused dependencies and generates/updates snova.mdlo */
+    /* `tidy [--project] [<path>]`: cleans unused dependencies and generates/updates mod.sno */
     if (strcmp(argv[1], "tidy") == 0) {
         const char *proj_path = ".";
         for (int i = 2; i < argc; i++) {

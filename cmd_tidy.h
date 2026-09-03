@@ -1,4 +1,4 @@
-/* cmd_tidy.h — dependency analysis, pruning, and snova.mdlo generator. */
+/* cmd_tidy.h — dependency analysis, pruning, and mod.sno generator. */
 #ifndef SNOVAC_CMD_TIDY_H
 #define SNOVAC_CMD_TIDY_H
 

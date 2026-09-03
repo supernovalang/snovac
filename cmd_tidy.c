@@ -97,10 +97,10 @@ int cmd_tidy_project(const char *path) {
     char proj_root[SNOVAC_PATH_MAX];
     if (proj.has_manifest) {
         dirname_into(proj.source_root, proj_root, sizeof(proj_root));
-        snprintf(manifest_path, sizeof(manifest_path), "%s/snova.mdlo", proj_root);
+        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj_root);
     } else {
         snprintf(proj_root, sizeof(proj_root), "%s", path);
-        snprintf(manifest_path, sizeof(manifest_path), "%s/snova.mdlo", path);
+        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", path);
     }
 
     char mod_name[256];
@@ -178,7 +178,7 @@ int cmd_tidy_project(const char *path) {
         }
     }
 
-    /* Write updated snova.mdlo */
+    /* Write updated mod.sno */
     FILE *out = fopen(manifest_path, "w");
     if (!out) {
         fprintf(stderr, "error: cannot write manifest to %s\n", manifest_path);

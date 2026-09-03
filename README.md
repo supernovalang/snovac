@@ -21,7 +21,7 @@ wget -qO- https://raw.githubusercontent.com/supernovalang/snovac/master/install.
 
 - **Pure C11 Implementation**: Zero dependencies, extremely fast compilation speed.
 - **Diagnostics & Error Reporting**: Colorized source snippets with precise diagnostic codes (`SNOVA0001` - `SNOVA0040`).
-- **Module Management**: Discovers root packages with `snova.mdlo`.
+- **Module Management**: Discovers root packages with `mod.sno`.
 - **Bytecode VM & Native Compilation**: Ahead-of-time bytecode compilation and interpretation.
 - **Pulsar Concurrency**: Actor model and streaming concurrency support.
 
