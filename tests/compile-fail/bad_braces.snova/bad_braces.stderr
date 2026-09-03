@@ -1,0 +1,3 @@
+error[SNOVA008]: Unclosed `{` delimiter.
+error[SNOVA022]: `func main(...): int` must return an int value.
+error[SNOVA030]: `func` is not valid inside a class body — use `method`.

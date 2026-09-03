@@ -1,0 +1,44 @@
+package tests.packages.sec
+
+
+import builtin.sec.Sec
+
+
+func main(): int {
+    // Escaping.
+    let safeHtml: string = Escape.html("<b>x</b>")
+    let safeAttr: string = Escape.htmlAttribute("x=\"1\"")
+    let safeSql: string = Escape.sqlLiteral("O'Brien")
+    let safeShell: string = Escape.shellArg("a b'c")
+    let safeJson: string = Escape.jsonString("line\n\"quoted\"")
+
+    // Validation.
+    let emailOk: bool = Validate.isEmail("a@b.co")
+    let urlOk: bool = Validate.isUrl("https://snovalang.dev/docs")
+    let uuidOk: bool = Validate.isUuid("123e4567-e89b-12d3-a456-426614174000")
+    let ipOk: bool = Validate.isIpv4("192.168.0.1")
+    let alnumOk: bool = Validate.isAlphanumeric("abc123")
+    let nonEmptyCheck: Result<unit, SecError> = Validate.nonEmpty("name", "value")
+    let lengthCheck: Result<unit, SecError> = Validate.lengthBetween("name", "value", 1, 64)
+    let rangeCheck: Result<unit, SecError> = Validate.inRange("age", 30, 0, 150)
+
+    // Constant-time comparison.
+    let same: bool = ConstantTime.equals("token-a", "token-a")
+
+    // Rate limiting with injected clocks.
+    let bucket: TokenBucket = TokenBucket.new(10, 5)
+    let acquired: bool = bucket.tryAcquire(1000)
+    let acquiredMany: bool = bucket.tryAcquireN(1500, 3)
+    let left: int = bucket.available(2000)
+
+    let window: FixedWindowLimiter = FixedWindowLimiter.new(100, 60000)
+    let allowed: bool = window.allow("client-1", 1000)
+    let quota: int = window.remaining("client-1", 2000)
+
+    // Redaction.
+    let masked: string = Redact.secret("sk_live_abcdef123456")
+    let maskedEmail: string = Redact.email("someone@example.com")
+    let maskedCustom: string = Redact.pattern("4111111111111111", 4, 4)
+
+    return 0
+}

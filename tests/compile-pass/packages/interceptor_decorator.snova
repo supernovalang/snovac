@@ -1,0 +1,32 @@
+package tests.packages.interceptor
+
+
+import builtin.events.Events
+import builtin.console.Console
+import builtin.context.Context
+
+
+func logBefore(): unit {
+    Console.printline("Before running function")
+}
+
+func checkCondition(ctx: Context): unit {
+    Console.printline("Condition met or running parallel action")
+}
+
+func logAfter(): unit {
+    Console.printline("After running function")
+}
+
+class MyService {
+    @Interceptor(beforeRun = logBefore, runWhen = checkCondition, afterRun = logAfter)
+    async method processData(): Task<unit> {
+        Console.printline("Processing data...")
+    }
+}
+
+async func main(): Task<int> {
+    let service = MyService()
+    await service.processData()
+    return 0;
+}

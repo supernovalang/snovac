@@ -176,3 +176,68 @@ SnTypeRep *sn_type_array(SnTypeTable *t, SnTypeRep *elem) {
 }
 
 int sn_type_equals(const SnTypeRep *a, const SnTypeRep *b) { return a == b; }
+
+SnTypeRep *sn_type_subst_names(SnTypeTable *t, SnTypeRep *ty,
+                               const char *const *param_names,
+                               SnTypeRep *const *arg_types, uint32_t count) {
+    if (!ty || count == 0 || !param_names || !arg_types) {
+        return ty;
+    }
+    if (ty->tag == SN_T_TYPEVAR && ty->decl && ty->decl->name) {
+        for (uint32_t i = 0; i < count; i++) {
+            if (param_names[i] && strcmp(param_names[i], ty->decl->name) == 0) {
+                return arg_types[i];
+            }
+        }
+        return ty;
+    }
+    if (ty->tag == SN_T_NAMED && ty->nargs > 0) {
+        SnTypeRep **new_args = (SnTypeRep **)sn_arena_alloc(
+            t->arena, ty->nargs * sizeof(SnTypeRep *));
+        int changed = 0;
+        for (uint32_t i = 0; i < ty->nargs; i++) {
+            new_args[i] = sn_type_subst_names(t, ty->args[i], param_names,
+                                              arg_types, count);
+            if (new_args[i] != ty->args[i]) {
+                changed = 1;
+            }
+        }
+        if (!changed) {
+            return ty;
+        }
+        return sn_type_named(t, ty->decl, new_args, ty->nargs);
+    }
+    if (ty->tag == SN_T_ARRAY && ty->nargs > 0 && ty->args[0]) {
+        SnTypeRep *new_elem = sn_type_subst_names(t, ty->args[0], param_names,
+                                                 arg_types, count);
+        if (new_elem == ty->args[0]) {
+            return ty;
+        }
+        return sn_type_array(t, new_elem);
+    }
+    if (ty->tag == SN_T_FUNC) {
+        SnTypeRep **new_params = NULL;
+        int changed = 0;
+        if (ty->nargs > 0) {
+            new_params = (SnTypeRep **)sn_arena_alloc(
+                t->arena, ty->nargs * sizeof(SnTypeRep *));
+            for (uint32_t i = 0; i < ty->nargs; i++) {
+                new_params[i] = sn_type_subst_names(t, ty->args[i], param_names,
+                                                    arg_types, count);
+                if (new_params[i] != ty->args[i]) {
+                    changed = 1;
+                }
+            }
+        }
+        SnTypeRep *new_ret = sn_type_subst_names(t, ty->ret, param_names,
+                                                arg_types, count);
+        if (new_ret != ty->ret) {
+            changed = 1;
+        }
+        if (!changed) {
+            return ty;
+        }
+        return sn_type_func(t, new_params, ty->nargs, new_ret);
+    }
+    return ty;
+}

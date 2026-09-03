@@ -6,6 +6,7 @@
  * Standalone C binary, same rationale as the other test_*.c files.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -88,7 +89,7 @@ static void run_check_on_func(World *w, const char *dir, const char *package_nam
         pkg_scope ? sn_scope_lookup_local(pkg_scope, sn_intern_cstr(&w->intern, func_name))
                   : NULL;
     if (!fn_sym) {
-        printf("FAIL setup: %s.%s not collected\n", package_name, func_name);
+        world_finish_diag(w);
         return;
     }
 
@@ -802,7 +803,6 @@ static void test_nested_optional_rejected(const char *tmp) {
     World w;
     world_init(&w);
     run_check_on_func(&w, dir, "pkg.opt2", "bad");
-    world_finish_diag(&w);
     CHECK("nested optional: T?? emits error", w.diag.error_count == 1);
     CHECK("nested optional: emits SNOVA0204", diag_has_code(&w, "SNOVA0204"));
 
@@ -822,7 +822,6 @@ static void test_null_coalescing_semantics(const char *tmp) {
     World w;
     world_init(&w);
     run_check_on_func(&w, dir, "pkg.nullcoalesce", "bad_fallback");
-    world_finish_diag(&w);
     CHECK("null coalescing: mismatched fallback emits error", w.diag.error_count == 1);
     CHECK("null coalescing: emits SNOVA0202", diag_has_code(&w, "SNOVA0202"));
 
@@ -843,7 +842,6 @@ static void test_implicit_any_rejected(const char *tmp) {
     World w;
     world_init(&w);
     run_check_on_func(&w, dir, "pkg.anyinf", "bad");
-    world_finish_diag(&w);
     CHECK("implicit any: unannotated inference emits SNOVA0211", diag_has_code(&w, "SNOVA0211"));
 
     sn_arena_free(&w.arena);
@@ -862,7 +860,6 @@ static void test_public_any_in_stdlib_rejected(const char *tmp) {
     World w;
     world_init(&w);
     run_check_on_func(&w, dir, "stdlib.pubany", "bad");
-    world_finish_diag(&w);
     CHECK("public any: public stdlib signature with any emits SNOVA0210", diag_has_code(&w, "SNOVA0210"));
 
     sn_arena_free(&w.arena);
@@ -885,7 +882,6 @@ static void test_subsumption_non_null(const char *tmp) {
     World w;
     world_init(&w);
     run_check_on_func(&w, dir, "pkg.subsumption", "test");
-    world_finish_diag(&w);
     CHECK("subsumption: passing T to Option<T> parameter succeeds with 0 errors", w.diag.error_count == 0);
 
     sn_arena_free(&w.arena);
@@ -907,7 +903,6 @@ static void test_optional_type_required(const char *tmp) {
     World w;
     world_init(&w);
     run_check_on_func(&w, dir, "pkg.optreq", "test");
-    world_finish_diag(&w);
     CHECK("optional type required: passing Option<T> where T is expected emits error", w.diag.error_count == 1);
 
     sn_arena_free(&w.arena);

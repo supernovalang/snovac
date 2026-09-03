@@ -1,0 +1,46 @@
+package test.runtime.host.symbols
+
+
+import builtin.runtimehost.RuntimeHost
+
+
+// Verify that the RuntimeHost abstraction and its public surface resolve.
+
+struct DecoratorExtension {
+    let name: string
+    let packageName: string
+    let targetKinds: Array<ExtensionTargetKind>
+    let phase: ExtensionPhase
+    let validatorId: string
+    let runtimeHookId: string
+    let description: string
+}
+
+func checkRegistry(): unit {
+    let reg: RuntimeExtensionRegistry = RuntimeExtensionRegistry
+    let ext = DecoratorExtension(
+        name: "TestExt",
+        packageName: "builtin.test.Test",
+        targetKinds: [ExtensionTargetKind.Function],
+        phase: ExtensionPhase.CompileTimeValidate,
+        validatorId: "test.v",
+        runtimeHookId: "test.h",
+        description: "demo"
+    )
+    let _ = reg.register(ext)
+    let looked = reg.lookup("TestExt")
+    // looked is Option; we just check it doesn't blow up at compile time
+}
+
+func checkHost(): unit {
+    let host: RuntimeHost = getDefault()
+    let _ = host.console()
+    let _ = host.extensionRegistry()
+    let _ = host.requestScopeFactory()
+}
+
+func checkScope(): unit {
+    let factory = RequestScopeFactory
+    let scopeOpt = factory.current()
+    let _ = factory.create()
+}

@@ -1,0 +1,19 @@
+package tests.packages.async_scope_symbols
+
+
+import builtin.async.Async
+import builtin.console.Console
+
+
+async func main(): Task<int> {
+    let scope = TaskScope.new()
+    let t = scope.spawn(func(): int { return 21 * 2 })
+    let token = scope.cancellation()
+    if scope.hasFailed() {
+        scope.cancelAll()
+    }
+    await Async.scope(func(s: TaskScope): unit {
+        let child = s.spawn(func(): int { return 7 })
+    })
+    return 0
+}

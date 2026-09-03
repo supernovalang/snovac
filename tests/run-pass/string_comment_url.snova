@@ -1,0 +1,10 @@
+package tests.string_comment
+
+
+import builtin.console.Console
+
+
+func main(): int {
+    Console.printline("https://example.com")
+    return 0
+}

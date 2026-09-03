@@ -1,0 +1,21 @@
+package tests.forward_reference
+
+import builtin.console.Console
+
+// Guards real behavior found while fixing snovac's builtin-resolution bug
+// (specs/20260727/language-conformance-baseline/): package-level symbol
+// collection is two-pass (all signatures first, then bodies), so a
+// top-level function may call another declared later in the same file —
+// same as Rust/Go/Java. A previous fixture
+// (tests/conformance/diagnostics/no_hoisting.snova) wrongly asserted this
+// must be a compile error; removed in favor of this positive guard.
+
+func main(): int {
+    var result = compute(10)
+    Console.printline(result)
+    return 0
+}
+
+func compute(n: int): int {
+    return n * 2
+}

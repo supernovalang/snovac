@@ -1,0 +1,22 @@
+package tests.inheritance
+
+
+class Animal {
+    method speak(): string = "sound"
+}
+
+class Dog : Animal {
+    method speak(): string = "woof"
+}
+
+class Cat : Animal {
+}
+
+class Shelter {
+    let resident: Animal
+}
+
+func adopt(): Animal {
+    let pet: Animal = Dog()
+    return pet
+}

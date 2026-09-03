@@ -1,0 +1,58 @@
+package tests.packages.http_decorator_symbols
+
+import builtin.http.Http.HttpDecorators
+import builtin.http.Http.HttpEndpointReturns
+import builtin.http.Http.HttpRuntime
+import builtin.http.Http.HttpServer
+
+struct UserDto {
+    let id: string
+    let email: string
+}
+
+@GetRequest("/users/{id}", mediaType = "application/json")
+async func getUser(req: IncomingRequest): Task<HttpResponse<UserDto>> {
+    return HttpResponse<UserDto>.ok(UserDto { id: "1", email: "a@b.com" })
+}
+
+@PutRequest("/items/{id}", mediaType = "application/json")
+async func updateItem(req: IncomingRequest): Task<HttpResponse<UserDto>> {
+    return HttpResponse<UserDto>.ok(UserDto { id: "2", email: "updated@b.com" })
+}
+
+@PatchRequest("/items/{id}")
+async func patchItem(req: IncomingRequest): Task<HttpResponse<UserDto>> {
+    return ok(UserDto { id: "3", email: "patched@b.com" })
+}
+
+@DeleteRequest("/items/{id}")
+async func deleteItem(req: IncomingRequest): Task<HttpResponse<HttpBody>> {
+    return noContent()
+}
+
+func checkCollector(): unit {
+    let source = "@GetRequest(\"/a\")\nasync func a(): Task<HttpResponse<UserDto>> { return 0 }\n"
+    let routes: Array<DecoratedHttpRouteEntry> = httpCollectDecoratedRoutes(source, [""])
+    let _ = routes
+
+    let valid = HttpEndpointReturnContract.isValidHandlerReturn("Task<HttpResponse<UserDto>>")
+    let _ = valid
+
+    match HttpEndpointReturnContract.extractBodyType("Task<HttpResponse<UserDto>>") {
+        Some(ty) -> {
+            let _ = ty
+        }
+        None -> {}
+    }
+
+    let bodyLines: Array<string> = [
+        "return HttpResponse<UserDto>.ok(UserDto { id: \"1\", email: \"a@b.com\" })",
+    ]
+    let wire: string = HttpRuntime.materializeEndpointResponse("200 OK", bodyLines)
+    let _ = wire
+}
+
+func main(): int {
+    checkCollector()
+    return 0
+}

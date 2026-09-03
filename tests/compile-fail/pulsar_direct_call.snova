@@ -1,0 +1,8 @@
+package tests.pulsar_direct_call
+
+pulsar func worker(): unit {}
+
+func main(): int {
+    worker()
+    return 0
+}

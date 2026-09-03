@@ -1,0 +1,11 @@
+package tests.visibility.provider
+
+internal func helperOnly(): int {
+    return 42
+}
+
+package tests.visibility.consumer
+
+func main(): int {
+    return helperOnly()
+}

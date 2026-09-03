@@ -1,0 +1,2 @@
+error[SNOVA013]: `await` is only valid inside an `async func` or `async method`.
+error[SNOVA123]: `await` is not valid inside a pulsar function.

@@ -1,0 +1,11 @@
+package tests.bad
+
+
+// error: `func` inside a class body must be `method`.
+class Greeter {
+    func greet(): String {
+        return "hello"
+    }
+}
+
+func main(): Int = 0

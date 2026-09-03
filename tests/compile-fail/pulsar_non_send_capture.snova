@@ -1,0 +1,12 @@
+package tests.pulsar_non_send_capture
+
+class Widget {
+}
+
+func main(): int {
+    let w: Widget = Widget()
+    pulsar {
+        let x = w
+    }
+    return 0
+}

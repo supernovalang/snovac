@@ -1,0 +1,593 @@
+package builtin.errors.Errors
+
+
+import builtin.json.Json
+
+
+// ── Compile-time error verification decorators ─────────────────────────────
+
+// Documents that the decorated API has a compile-time-verifiable error
+// contract. The compiler owns evaluation of the condition; this declaration
+// makes the decorator part of the public package surface for libraries.
+@Decorator
+struct ErrorVerify {
+    public let condition: string
+    public let code: string
+    public let message: string
+    public let mode: string
+}
+
+// ── Error / Exception hierarchy ───────────────────────────────────────────
+//
+// Snovalang uses a two-root hierarchy:
+//
+//   Error      — base class for programmatic (non-recoverable) failures.
+//                Subclasses indicate bugs: assertion failures, null dereferences,
+//                arithmetic overflows, etc.  Do NOT catch `Error`; fix the code.
+//
+//   Exception  — base class for recoverable, expected exceptional conditions.
+//                Subclasses may be caught and handled: validation failures,
+//                resource not found, network timeouts, etc.
+//
+// Extend either class to define domain-specific error/exception types:
+//
+//   class DomainError : Error {
+//       public let reason: string
+//       override method message(): string { return "domain error: " + reason }
+//   }
+//
+//   class DomainException : Exception {
+//       public let detail: string
+//       override method message(): string { return detail }
+//       override method userMessage(): string { return detail }
+//       override method code(): string { return "DOMAIN_ERR" }
+//   }
+//
+// The `Err` interface is kept for backward compatibility.  New code should
+// extend `Error` or `Exception` directly instead of implementing `Err`.
+
+// ── Err (backward-compat interface) ──────────────────────────────────────
+
+interface Err {
+    method message(): string
+    method code(): string
+    method stackTrace(): string
+    method asString(): string
+}
+
+// ── Error — extensible base class for non-recoverable failures ────────────
+
+class Error {
+    private let msg: string
+    private let cause: Error?
+
+    static method new(message: string): Error {
+        return Error(message, None)
+    }
+
+    // Wraps `cause` with additional context without losing the original error.
+    static method wrap(cause: Error, message: string): Error {
+        return Error(message, cause)
+    }
+
+    method message(): string {
+        return msg
+    }
+
+    method cause(): Error? {
+        return cause
+    }
+
+    // Returns the full error chain as a single formatted string.
+    method chain(): string {
+        if cause == null {
+            return msg
+        }
+        return msg + ": " + cause.chain()
+    }
+
+    method asString(): string {
+        return chain()
+    }
+}
+
+// ── Exception — extensible base class for recoverable exceptions ──────────
+
+class Exception {
+    private let msg: string
+    private let errorCode: string
+    private let userMsg: string
+
+    static method new(message: string, code: string = "", userMessage: string = ""): Exception {
+        let um = if userMessage == "" { message } else { userMessage }
+        return Exception(message, code, um)
+    }
+
+    method message(): string {
+        return msg
+    }
+
+    method userMessage(): string {
+        return userMsg
+    }
+
+    method code(): string {
+        return errorCode
+    }
+
+    method asString(): string {
+        return msg
+    }
+}
+
+// ── Deferred<T, E> ─────────────────────────────────────────────────────────
+
+// Wraps a `Result<T, E>` so its error can be handled at a later point in
+// the code rather than immediately at the call site.
+//
+// Usage:
+//   let handle = try(operation())
+//   // ... code that runs regardless of error ...
+//   let value = handle.catch((err) -> fallback)
+class Deferred<T, E> {
+    private let inner: Result<T, E>
+
+    // Resolves the Deferred. If the inner result is Ok, returns its value.
+    // If it is Err, calls `handler` and returns the fallback value.
+    method catch(handler: func(E) -> T): T {
+        return match inner {
+            Ok(value) -> value
+            Err(err) -> handler(err)
+        }
+    }
+
+    // Runs `handler` on the error if present, then returns the original Result.
+    // Useful when the caller wants to observe the error without mapping the type.
+    method catchWith(handler: func(E) -> unit): Result<T, E> {
+        match inner {
+            Err(err) -> handler(err)
+            Ok(_) -> unit
+        }
+        return inner
+    }
+
+    // Returns true when the Deferred wraps an error.
+    method isErr(): bool {
+        return inner.isErr()
+    }
+
+    // Returns true when the Deferred wraps a success value.
+    method isOk(): bool {
+        return inner.isOk()
+    }
+
+    // Applies `f` to the Ok value and returns a new Deferred.
+    // When the inner result is Err, the error passes through unchanged.
+    method map<U>(f: func(T) -> U): Deferred<U, E> {
+        return Deferred(inner.map(f))
+    }
+
+    // Flat-maps the Ok value to another Result-producing function.
+    method flatMap<U>(f: func(T) -> Result<U, E>): Deferred<U, E> {
+        return Deferred(inner.flatMap(f))
+    }
+
+    // Extracts the Ok value without error handling. Panics on Err.
+    // Use only in tests or when the error is guaranteed impossible.
+    method unwrap(): T {
+        return inner.unwrap()
+    }
+
+    // Returns the underlying Result, transferring ownership of the decision
+    // back to the caller.
+    method result(): Result<T, E> {
+        return inner
+    }
+}
+
+// ── Global try() function ──────────────────────────────────────────────────
+
+// Wraps a `Result<T, E>` into a `Deferred<T, E>`, deferring error handling
+// to a later point in the calling code.
+//
+// Example:
+//   let handle = try(parseInt(input))
+//   let n = handle.catch((err) -> 0)
+func try<T, E>(result: Result<T, E>): Deferred<T, E> {
+    return Deferred(result)
+}
+
+// ── Convenience combinators ────────────────────────────────────────────────
+
+// Creates a simple error value.
+func new(message: string): Error {
+    return Error.new(message)
+}
+
+// Wraps `cause` with additional context.
+//
+//   let cause = Errors.new("disk full")
+//   let err = Errors.wrap(cause, "saving profile failed")
+func wrap(cause: Error, message: string): Error {
+    return Error.wrap(cause, message)
+}
+
+// Captures the current call stack, one frame per line, most recent first.
+// The only native entry point in this package — everything else is pure
+// Snovalang by design. Attach it to errors at creation sites for debuggable
+// failures:
+//
+//   let err = Errors.wrap(cause, "request failed\n" + Errors.backtrace())
+@native("snovalang_errors_backtrace")
+func backtrace(): string
+
+// ── Built-in Error subtypes ───────────────────────────────────────────────
+// All extend `Error` directly. The `Err` interface names are kept as aliases
+// for backward compatibility.
+
+class AssertionError : Error {
+    public let condition: string
+    public let detail: string
+
+    override method message(): string {
+        return "assertion failed: " + condition + " " + detail
+    }
+
+    method stackTrace(): string {
+        return ""
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+// Backward-compat alias
+class AssertionErr : AssertionError {}
+
+class IndexOutOfBoundsError : Error {
+    public let index: int
+    public let size: int
+
+    override method message(): string {
+        return "index " + index.toString() + " out of bounds (size: " + size.toString() + ")"
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class IndexOutOfBoundsErr : IndexOutOfBoundsError {}
+
+class NullDerefError : Error {
+    public let typeName: string
+
+    override method message(): string {
+        return "null dereference: " + typeName
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class NullDerefErr : NullDerefError {}
+
+class UnreachableError : Error {
+    public let hint: string
+
+    override method message(): string {
+        return "unreachable code reached: " + hint
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class UnreachableErr : UnreachableError {}
+
+class CastError : Error {
+    public let fromType: string
+    public let toType: string
+
+    override method message(): string {
+        return "invalid cast from " + fromType + " to " + toType
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class CastErr : CastError {}
+
+class ArithmeticError : Error {
+    public let operation: string
+
+    override method message(): string {
+        return "arithmetic error: " + operation
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class ArithmeticErr : ArithmeticError {}
+
+// ── Built-in Exception subtypes ───────────────────────────────────────────
+// All extend `Exception` and inherit message(), userMessage(), code().
+
+class ValidationException : Exception {
+    public let field: string
+    public let reason: string
+
+    override method message(): string {
+        return field + ": " + reason
+    }
+
+    override method userMessage(): string {
+        return message()
+    }
+
+    override method code(): string {
+        return "VALIDATION"
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class NotFoundException : Exception {
+    public let resource: string
+    public let id: string
+
+    override method message(): string {
+        return resource + " not found: " + id
+    }
+
+    override method userMessage(): string {
+        return message()
+    }
+
+    override method code(): string {
+        return "NOT_FOUND"
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class UnauthorizedException : Exception {
+    public let realm: string
+
+    override method message(): string {
+        return "unauthorized: " + realm
+    }
+
+    override method userMessage(): string {
+        return "Authentication is required."
+    }
+
+    override method code(): string {
+        return "UNAUTHORIZED"
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class ForbiddenException : Exception {
+    public let action: string
+    public let resource: string
+
+    override method message(): string {
+        return "forbidden " + action + " on " + resource
+    }
+
+    override method userMessage(): string {
+        return "You do not have permission to perform this action."
+    }
+
+    override method code(): string {
+        return "FORBIDDEN"
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class ConflictException : Exception {
+    public let reason: string
+
+    override method message(): string {
+        return "conflict: " + reason
+    }
+
+    override method userMessage(): string {
+        return message()
+    }
+
+    override method code(): string {
+        return "CONFLICT"
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class TimeoutException : Exception {
+    public let operationName: string
+    public let limitMs: int
+
+    override method message(): string {
+        return operationName + " timed out after " + limitMs.toString() + "ms"
+    }
+
+    override method userMessage(): string {
+        return "The operation timed out."
+    }
+
+    override method code(): string {
+        return "TIMEOUT"
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class InternalException : Exception {
+    public let cause: string
+    private let internalDetail: string
+
+    override method message(): string {
+        return "internal error: " + cause
+    }
+
+    override method userMessage(): string {
+        return "An internal error occurred."
+    }
+
+    override method code(): string {
+        return "INTERNAL"
+    }
+
+    method asString(): string {
+        return message()
+    }
+}
+
+class BadRequestException : ValidationException {}
+
+class MethodNotAllowedException : Exception {
+    public let methodName: string
+
+    override method message(): string { return "method not allowed: " + methodName }
+    override method userMessage(): string { return "Method not allowed." }
+    override method code(): string { return "METHOD_NOT_ALLOWED" }
+    method asString(): string { return message() }
+}
+
+class TooManyRequestsException : Exception {
+    public let retryAfterMs: int
+
+    override method message(): string { return "too many requests" }
+    override method userMessage(): string { return "Too many requests." }
+    override method code(): string { return "TOO_MANY_REQUESTS" }
+    method asString(): string { return message() }
+}
+
+class ServiceUnavailableException : Exception {
+    public let serviceName: string
+
+    override method message(): string { return serviceName + " is unavailable" }
+    override method userMessage(): string { return "Service unavailable." }
+    override method code(): string { return "SERVICE_UNAVAILABLE" }
+    method asString(): string { return message() }
+}
+
+// ── RFC 7807 Web Response Exception ───────────────────────────────────────
+
+// Contract for any API DTO that can be returned as an HTTP error payload.
+// A DTO satisfies this interface structurally (see `Serializable`/
+// `Deserializable` above) by declaring these five methods — no inheritance
+// required. Pair it with `HttpResult<T, E>` in `builtin.http.Http` so handler
+// error paths stay statically typed instead of falling back to `any`.
+interface ProblemDetails {
+    method typeUri(): string
+    method title(): string
+    method status(): int
+    method detail(): string
+    method instance(): string
+}
+
+// Default RFC 7807 payload. Use this when a domain-specific problem DTO
+// isn't worth defining; otherwise implement `ProblemDetails` directly on the
+// API's own error DTO.
+@json
+struct ProblemDetail : ProblemDetails {
+    @jsonField("type")
+    private let problemType: string
+    @jsonField("title")
+    private let problemTitle: string
+    @jsonField("status")
+    private let problemStatus: int
+    @jsonField("detail")
+    private let problemDetail: string
+    @jsonField("instance")
+    private let problemInstance: string
+
+    static method of(status: int, title: string, detail: string, typeUri: string = "about:blank", instance: string = ""): ProblemDetail {
+        return ProblemDetail(typeUri, title, status, detail, instance)
+    }
+
+    method typeUri(): string {
+        return problemType
+    }
+
+    method title(): string {
+        return problemTitle
+    }
+
+    method status(): int {
+        return problemStatus
+    }
+
+    method detail(): string {
+        return problemDetail
+    }
+
+    method instance(): string {
+        return problemInstance
+    }
+}
+
+class WebResponseException : Exception {
+    private let problem: ProblemDetails
+
+    @errorVerify(
+        condition: "http.statusError(status)",
+        code: "SNOVA100",
+        message: "WebResponseException status must be between 400 and 599",
+        mode: "required"
+    )
+    static method of(status: int, title: string, detail: string, typeUri: string = "about:blank", instance: string = ""): WebResponseException {
+        return WebResponseException(ProblemDetail.of(status, title, detail, typeUri, instance))
+    }
+
+    static method fromProblem(problem: ProblemDetails): WebResponseException {
+        return WebResponseException(problem)
+    }
+
+    method problemDetails(): ProblemDetails {
+        return problem
+    }
+
+    method status(): int {
+        return problem.status()
+    }
+
+    method message(): string {
+        return problem.title() + ": " + problem.detail()
+    }
+
+    method userMessage(): string {
+        return problem.detail()
+    }
+
+    method code(): string {
+        return problem.status().toString()
+    }
+
+    method asString(): string {
+        return message()
+    }
+}

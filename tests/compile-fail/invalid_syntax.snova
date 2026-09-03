@@ -1,0 +1,12 @@
+package tests.invalid_syntax
+
+
+// Missing closing brace on class body.
+class Broken {
+    method foo(): int = {
+        return 42
+        // <-- missing }
+
+        func main(): int {
+            return 0
+        }

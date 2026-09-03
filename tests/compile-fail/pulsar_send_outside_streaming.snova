@@ -1,0 +1,9 @@
+package tests.pulsar_send_outside_streaming
+
+pulsar func worker(): unit {
+    return Channel.send(1)
+}
+
+func main(): int {
+    return 0
+}

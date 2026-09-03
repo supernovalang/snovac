@@ -1,0 +1,16 @@
+package tests.packages.sql_migration_builder
+
+
+import builtin.sql.Sql.SqlMigrations
+import builtin.sql.Sql.SqlTypes
+import builtin.sql.Sql.SqlBuilder
+import builtin.sql.Sql.SqlRuntime
+
+
+func main(): int {
+    let script = MigrationScript.builder(1, "create_products")
+        .up("CREATE TABLE products (id TEXT PRIMARY KEY)")
+        .down("DROP TABLE IF EXISTS products")
+        .build()
+    return 0
+}

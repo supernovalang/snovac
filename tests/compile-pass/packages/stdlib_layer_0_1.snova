@@ -1,0 +1,29 @@
+package tests.packages.layer01
+
+import builtin.args.Args
+import builtin.console.Console
+import builtin.env.Env
+import builtin.errors.Errors
+import builtin.filesystem.FileSystem
+import builtin.format.Format
+import builtin.inout.InOut
+import builtin.math.Math
+import builtin.strings.Strings
+import builtin.utils.Utils
+
+struct Path {}
+struct File {}
+struct Pipe {}
+struct Uuid {}
+
+func main(): int {
+    let args = Args.count()
+    let env = Env.get("PATH")
+    let instant = now()
+    let path = Path()
+    let file = File()
+    let pipe = Pipe()
+    let uuid = Uuid()
+    Console.printline("stdlib layer 0-1 compile")
+    return 0
+}

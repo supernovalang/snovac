@@ -1,0 +1,1 @@
+error[SNOVA052]: package import cycle detected: tests.import_cycle_self.import_cycle_self -> tests.import_cycle_self.import_cycle_self.

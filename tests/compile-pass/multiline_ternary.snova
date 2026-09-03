@@ -1,0 +1,12 @@
+package tests.multiline_ternary
+
+func main(): int {
+    let cond = true
+    let result = cond
+        ? 1
+        : 2
+    let result2 = cond ?
+        10 :
+        20
+    return result + result2
+}

@@ -1,0 +1,7 @@
+error[SNOVA023]: `beforeRunFunc` is not defined in this scope; declare it, pass it as a parameter, or import the package that provides it.
+ --> tests/compile-fail/packages/decorator_undefined_reference.snova:10:30
+   |
+10 |     @Interceptor(beforeRun: beforeRunFunc)
+   |                              ^^^^^^^^^^^^^ undefined decorator hook reference
+   |
+   = hint: declare the function in this file or import the package that exports it

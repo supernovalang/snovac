@@ -1,0 +1,20 @@
+package tests.packages.channels_select_symbols
+
+
+import builtin.channels.Channels
+import builtin.console.Console
+
+
+async func main(): Task<int> {
+    let ch = Channels.makeChannel<int>(4)
+    let cases = [SelectCase(ch, SelectKind.Receive)]
+
+    let immediate = Channel.selectOrDefault(cases)
+    let awaited = await Channel.select(cases)
+    let timed = await Channel.selectTimeout(cases, 100)
+
+    if timed.index == 0 - 1 {
+        Console.printline("timed out")
+    }
+    return 0
+}

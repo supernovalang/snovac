@@ -1,0 +1,43 @@
+package tests.packages.context_upgrade
+
+
+import builtin.context.Context
+import builtin.console.Console
+
+
+async func main(): Task<int> {
+    let ctx = Context.background()
+
+    // 1. fluent values
+    let ctxVal = ctx.withValue("user.id", "12345")
+    match ctxVal.getValue("user.id") {
+        Some(val) -> Console.printline("Found user: " + val)
+        None -> Console.printline("User not found")
+    }
+
+    // 2. fluent timeout with Duration
+    let dur = DateTime.Duration.seconds(3)
+    let ctxTimeout = ctxVal.withTimeout(dur)
+
+    // 3. fluent cancel
+    let handle = ctxTimeout.withCancel()
+    let childCtx = handle.context()
+
+    if childCtx.isDone() {
+        Console.printline("Done early")
+    }
+
+    handle.cancel()
+
+    match childCtx.err() {
+        Some(err) -> {
+            match err {
+                ContextError.Cancelled -> Console.printline("Cancelled successfully")
+                ContextError.DeadlineExceeded -> Console.printline("Timeout exceeded")
+            }
+        }
+        None -> Console.printline("Still live")
+    }
+
+    return 0;
+}

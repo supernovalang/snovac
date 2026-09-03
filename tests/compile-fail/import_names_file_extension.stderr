@@ -1,0 +1,1 @@
+error[SNOVA051]: import `com.example.Helper.snova` must name a file, not a file extension — drop the trailing `.snova`/`.sno` segment.

@@ -1,0 +1,36 @@
+package tests.packages.http_runtime_symbols
+
+import builtin.http.Http.HttpRuntime
+import builtin.http.Http.HttpDecorators
+import builtin.http.Http.HttpEndpointReturns
+
+func checkMaterializer(): unit {
+    let bodyLines: Array<string> = [
+        "return textOk(\"hello\")",
+    ]
+    let wire: string = HttpRuntime.materializeEndpointResponse("200 OK", bodyLines)
+    let _ = wire
+
+    let jsonLines: Array<string> = [
+        "return ok(HttpBody.fromString(\"{\\\"ok\\\":true}\"))",
+    ]
+    let jsonWire: string = httpMaterializeEndpoint("200 OK", jsonLines, "application/json")
+    let _ = jsonWire
+
+    let _ = HttpRuntime.registerExtensions()
+    let _ = HttpDecoratorRegistry.registerAll()
+    let _ = HttpRuntime.deserializeRequestBody<string>("{}", "application/json")
+
+    let dtoLines: Array<string> = [
+        "return HttpResponse<UserDto>.ok(UserDto { id: \"9\", email: \"z@z.com\" })",
+    ]
+    let dtoWire: string = HttpRuntime.materializeEndpointResponse("200 OK", dtoLines)
+    let _ = dtoWire
+
+    let _ = HttpEndpointReturnContract.isValidHandlerReturn("Task<HttpResponse<UserDto>>")
+}
+
+func main(): int {
+    checkMaterializer()
+    return 0
+}

@@ -1,0 +1,4 @@
+package tests.per_file_isolation.bad_braces
+
+class Handler {
+func main(): int {

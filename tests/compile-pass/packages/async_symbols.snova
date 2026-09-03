@@ -1,0 +1,17 @@
+package tests.packages.async_symbols
+
+
+import builtin.async.Async
+import builtin.console.Console
+
+
+async func slowAdd(a: int, b: int): Task<int> {
+    await Async.sleep(0)
+    return a + b
+}
+
+async func main(): Task<int> {
+    let t = Async.spawn(func(): int { return 42 })
+    let token = CancellationToken.new()
+    return 0
+}

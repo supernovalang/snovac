@@ -1,0 +1,7 @@
+package tests.missing_import
+
+import Nonexistent.Package
+
+func main(): int {
+    return 0
+}

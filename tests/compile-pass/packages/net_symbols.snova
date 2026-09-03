@@ -1,0 +1,17 @@
+package tests.packages.net_symbols
+
+
+import builtin.net.Net
+import builtin.async.Async
+
+
+async func handleConn(stream: TcpStream): Task<unit> {
+    let data = await stream.read(4096)
+    stream.close()
+}
+
+async func main(): Task<int> {
+    let listener = await Net.listen("127.0.0.1:0")
+    let conn = await Net.connect("127.0.0.1:8080")
+    return 0
+}

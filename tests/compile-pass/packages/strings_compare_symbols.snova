@@ -1,0 +1,13 @@
+package tests.packages.strings_compare_symbols
+
+
+import builtin.strings.Strings
+
+
+func main(): int {
+    let a = Strings.compare("apple", "banana")
+    let b = Strings.compareIgnoreCase("ABC", "abc")
+    let c = Strings.equals("x", "x")
+    let d = Strings.equalsIgnoreCase("X", "x")
+    return 0
+}

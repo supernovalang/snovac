@@ -7,7 +7,7 @@
 
 CC      ?= cc
 CFLAGS  ?= -std=c11 -O2 -g
-CPPFLAGS ?=
+CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
            -Wmissing-prototypes -Wconversion -Wno-sign-conversion
 BUILD   ?= build
@@ -18,7 +18,8 @@ SRCS = main.c dump.c ast.c \
        parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
        parse_decl.c parse_decl_parts.c \
        eval.c eval_expr.c eval_stmt.c eval_string.c \
-       diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c
+       diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
+       snbc.c value.c vm.c emit_bc.c link_append.c
 OBJS = $(addprefix $(BUILD)/,$(SRCS:.c=.o))
 DEPS = $(OBJS:.o=.d)
 
@@ -86,7 +87,7 @@ unit: $(BIN) $(TEST_SYMBOL_BIN) $(TEST_PACKAGE_BIN) $(TEST_TYPES_BIN) $(TEST_RES
 
 # Lexes every .snova in the repository and reports coverage.
 conformance: $(BIN)
-	@sh ../scripts/snovac-conformance.sh $(BIN)
+	@sh scripts/snovac-conformance.sh $(BIN)
 
 test: unit conformance
 

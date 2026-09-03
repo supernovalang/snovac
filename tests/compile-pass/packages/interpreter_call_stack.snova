@@ -1,0 +1,151 @@
+package tests.packages.interpreter_call_stack
+
+
+// Self-contained demonstration of the call-stack engine whose canonical form
+// lives in package compiler.eval (compiler/src/eval/interpreter.snova).
+//
+// Compiler-internal packages are not importable from user fixtures, so this
+// re-expresses the same line-by-line stepping in the Stage-0 frontend subset to
+// give the surface durable compile coverage and a runnable example: `main`
+// calls `greet`, which runs line by line before `main` resumes at its next line.
+//
+// Instruction opcodes: 0 = print, 1 = call, 2 = return.
+
+struct Instr {
+    public let op: int
+    public let operand: string
+    public let callee: string
+}
+
+struct FnDef {
+    public let name: string
+    public let body: Array<Instr>
+}
+
+struct Frame {
+    public let fnName: string
+    public let ip: int
+}
+
+struct Interpreter {
+    public let functions: Array<FnDef>
+    public let maxStack: int
+    public let maxSteps: int
+
+    method lookup(name: string): FnDef {
+        var i = 0
+        while i < functions.len() {
+            let fn = functions.get(i)
+            if fn.name == name {
+                return fn
+            }
+            i = i + 1
+        }
+        return FnDef(name, Array<Instr>.new())
+    }
+
+    // Runs `entry` to completion (empty stack), stepping one line at a time.
+    method run(entry: string): Array<string> {
+        let output = Array<string>.new()
+        var frames = Array<Frame>.new()
+        frames.push(Frame(entry, 0))
+
+        var steps = 0
+        while frames.len() > 0 {
+            if steps >= maxSteps {
+                return output
+            }
+            steps = steps + 1
+
+            let depth = frames.len()
+            let frame = frames.get(depth - 1)
+            let fn = lookup(frame.fnName)
+
+            // Past the end of the body: implicit return, pop this frame.
+            if frame.ip >= fn.body.len() {
+                frames.set(depth - 1, Frame("", -1))
+                let popped = Array<Frame>.new()
+                var k = 0
+                while k < depth - 1 {
+                    popped.push(frames.get(k))
+                    k = k + 1
+                }
+                frames = popped
+                continue
+            }
+
+            let instr = fn.body.get(frame.ip)
+            // The caller always resumes at the line after the one we execute.
+            frames.set(depth - 1, Frame(frame.fnName, frame.ip + 1))
+
+            if instr.op == 0 {
+                output.push(instr.operand)
+            }
+            if instr.op == 1 {
+                if frames.len() < maxStack {
+                    frames.push(Frame(instr.callee, 0))
+                }
+            }
+            if instr.op == 2 {
+                let popped = Array<Frame>.new()
+                var k = 0
+                while k < frames.len() - 1 {
+                    popped.push(frames.get(k))
+                    k = k + 1
+                }
+                frames = popped
+            }
+        }
+        return output
+    }
+}
+
+func printInstr(text: string): Instr {
+    return Instr(0, text, "")
+}
+
+func callInstr(callee: string): Instr {
+    return Instr(1, "", callee)
+}
+
+func returnInstr(): Instr {
+    return Instr(2, "", "")
+}
+
+func main(): int {
+    let mainBody = Array<Instr>.new()
+    mainBody.push(printInstr("start"))
+    mainBody.push(callInstr("greet"))
+    mainBody.push(printInstr("end"))
+    mainBody.push(returnInstr())
+
+    let greetBody = Array<Instr>.new()
+    greetBody.push(printInstr("hello"))
+    greetBody.push(printInstr("world"))
+    greetBody.push(returnInstr())
+
+    let program = Array<FnDef>.new()
+    program.push(FnDef("main", mainBody))
+    program.push(FnDef("greet", greetBody))
+
+    let interp = Interpreter(program, 256, 100000)
+    let output = interp.run("main")
+
+    // Line-by-line over the call stack yields: start, hello, world, end.
+    if output.len() != 4 {
+        return 1
+    }
+    if output.get(0) != "start" {
+        return 1
+    }
+    if output.get(1) != "hello" {
+        return 1
+    }
+    if output.get(2) != "world" {
+        return 1
+    }
+    if output.get(3) != "end" {
+        return 1
+    }
+    return 0
+}

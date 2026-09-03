@@ -1,0 +1,11 @@
+package tests.optional_chaining
+
+class User {
+    public let name: string
+}
+
+func main(): int {
+    let u: User? = User("Alice")
+    let n = u?.name
+    return 0
+}

@@ -1,0 +1,10 @@
+package tests.run_pass.hello
+
+
+import builtin.console.Console
+
+
+func main(): int {
+    Console.printline("hello from run-pass")
+    return 0
+}

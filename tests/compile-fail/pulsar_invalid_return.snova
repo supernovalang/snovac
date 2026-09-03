@@ -1,0 +1,9 @@
+package tests.pulsar_invalid_return
+
+pulsar func bad(n: int) -> int {
+    return n
+}
+
+func main(): int {
+    return 0
+}

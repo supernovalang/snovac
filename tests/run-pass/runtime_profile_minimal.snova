@@ -1,0 +1,16 @@
+package tests.run_pass.runtime_profile_minimal
+
+import builtin.console.Console
+import builtin.runtime.Runtime
+
+func main(): int {
+    let cfg = RuntimeConfig.forProfile(RuntimeProfile.Minimal)
+    if cfg.backend != RuntimeBackend.Snova {
+        return 1
+    }
+    if cfg.features.isEnabled("scheduler") {
+        return 2
+    }
+    Console.printline("runtime profile minimal ok")
+    return 0
+}

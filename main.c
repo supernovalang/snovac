@@ -4,6 +4,13 @@
  * --check-parse, run, check. Backends land in later phases; see
  * specs/20260719/snovac-c-toolchain/plan.md.
  */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,12 +21,17 @@
 #include "check.h"
 #include "diag.h"
 #include "dump.h"
+#include "emit_bc.h"
 #include "eval.h"
 #include "lex.h"
+#include "link_append.h"
 #include "package.h"
 #include "parse.h"
 #include "resolve.h"
+#include "snbc.h"
 #include "types.h"
+#include "value.h"
+#include "vm.h"
 
 #ifndef SNOVAC_VERSION
 #define SNOVAC_VERSION "0.0.1-p1"
@@ -68,6 +80,7 @@ static void usage(FILE *out) {
             "  snovac --emit=ast    <file.snova>   dump the parse tree\n"
             "  snovac --check-parse <file.snova>   lex+parse; exit non-zero on error\n"
             "  snovac run           <file.snova>   parse and execute\n"
+            "  snovac build         <file.snova> [-o output] compile to standalone native executable\n"
             "  snovac check         <file.snova>   resolve + type-check (see llm.md: "
             "coverage is partial — no generics substitution yet)\n"
             "\n"
@@ -780,6 +793,68 @@ static int cmd_run(const char *path) {
     return rc;
 }
 
+static int cmd_build(const char *path, const char *out_path) {
+    size_t len = 0;
+    char *src = read_file(path, &len);
+    if (!src) {
+        fprintf(stderr, "error: cannot read '%s'\n", path);
+        return 2;
+    }
+
+    SnArena arena;
+    sn_arena_init(&arena, 1024 * 1024);
+
+    SnDiagSink diag;
+    sn_diag_init(&diag, path, src, len);
+
+    SnTokenVec toks;
+    sn_lex(&arena, &diag, src, len, &toks);
+
+    SnUnit unit;
+    sn_parse(&arena, &diag, &toks, &unit);
+
+    if (diag.error_count > 0) {
+        report_errors(&diag, path);
+        sn_arena_free(&arena);
+        free(src);
+        return 1;
+    }
+
+    sn_eval_merge_extensions(&arena, &unit);
+
+    SnBCUnit bc;
+    if (!sn_emit_bytecode(&arena, &diag, &unit, &bc)) {
+        fprintf(stderr, "error: failed to emit bytecode for '%s'\n", path);
+        sn_arena_free(&arena);
+        free(src);
+        return 1;
+    }
+
+    char default_out[1024];
+    if (!out_path || !out_path[0]) {
+        snprintf(default_out, sizeof(default_out), "%s", path);
+        char *dot = strrchr(default_out, '.');
+        if (dot && strcmp(dot, ".snova") == 0) {
+            *dot = '\0';
+        } else {
+            strncat(default_out, ".out", sizeof(default_out) - strlen(default_out) - 1);
+        }
+        out_path = default_out;
+    }
+
+    int ok = sn_build_executable(&bc, out_path);
+    sn_bcunit_free(&bc);
+    sn_arena_free(&arena);
+    free(src);
+
+    if (!ok) {
+        fprintf(stderr, "error: build failed for '%s'\n", path);
+        return 1;
+    }
+    printf("Compiled %s -> %s\n", path, out_path);
+    return 0;
+}
+
 /* A command that takes exactly one file argument. */
 typedef struct {
     const char *flag;
@@ -818,6 +893,22 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
         usage(stdout);
         return 0;
+    }
+
+    /* `build <path> [-o <out>]`: compiles to standalone native binary */
+    if (strcmp(argv[1], "build") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "error: build needs a file.snova\n");
+            return 2;
+        }
+        const char *file_path = argv[2];
+        const char *out_path = NULL;
+        if (argc >= 5 && strcmp(argv[3], "-o") == 0) {
+            out_path = argv[4];
+        } else if (argc >= 4 && strncmp(argv[3], "-o=", 3) == 0) {
+            out_path = argv[3] + 3;
+        }
+        return cmd_build(file_path, out_path);
     }
 
     /* `run --project <path>`: the project-wide form of `run`. Handled

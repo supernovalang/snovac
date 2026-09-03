@@ -1,0 +1,10 @@
+package tests.array_literal_untyped
+
+
+// error: an empty array literal carries no element type; the variable needs
+// an explicit annotation (`var ids: Array<string> = []`).
+
+func main(): int {
+    var ids = []
+    return 0
+}

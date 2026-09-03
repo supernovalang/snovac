@@ -1,0 +1,22 @@
+package tests.packages.context_symbols
+
+
+import builtin.context.Context
+import builtin.async.Async
+
+
+async func fetchData(ctx: Context, url: string): Task<string> {
+    if ctx.isDone() {
+        return "cancelled"
+    }
+    return "data"
+}
+
+async func main(): Task<int> {
+    let ctx = Context.background()
+    let timedCtx = Context.withTimeout(ctx, 5000)
+    let cancelCtx = Context.withCancel(ctx)
+    let valueCtx = Context.withValue(ctx, "auth.user", "alice")
+    let user = Context.value(valueCtx, "auth.user")
+    return 0
+}

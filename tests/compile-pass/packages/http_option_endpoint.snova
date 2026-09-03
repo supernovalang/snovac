@@ -1,0 +1,27 @@
+package tests.packages.httpoption
+
+
+import builtin.http.Http
+
+
+// `HttpOption<T>` mirrors `HttpResult<T, E>` for endpoints that either return
+// a body or don't — no error payload. See
+// crates/snovalang/src/native/runtime/json_model.rs for the matching
+// `.some(status, value)` serialization support (mirrors `.success(`/`.problem(`).
+
+struct UserDto {
+    let id: string
+    let email: string
+}
+
+@GetRequest("/users/{id}", mediaType = "application/json", headers = [])
+async func findUser(req: IncomingRequest): Task<HttpOption<UserDto>> {
+    if req.path == "" {
+        return HttpOption<UserDto>.none(404)
+    }
+    return HttpOption<UserDto>.some(200, UserDto("1", "a@b.com"))
+}
+
+func main(): int {
+    return 0
+}

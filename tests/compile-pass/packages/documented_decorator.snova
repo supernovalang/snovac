@@ -1,0 +1,17 @@
+package tests.packages.documented
+
+
+import builtin.lsp.Lsp
+
+
+@Documented(
+    description: "Returns the currently authenticated user id.",
+    example: "let id = currentUserId()"
+)
+public func currentUserId(): int {
+    return 0
+}
+
+func main(): int {
+    return currentUserId()
+}

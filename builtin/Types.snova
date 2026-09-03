@@ -1,0 +1,90 @@
+package builtin.types.Types
+
+
+import builtin.metadata.Documented
+
+
+// Self-hosted shape mirror of the language's built-in wrapper types.
+//
+// `Option<T>` and `Result<T, E>` are usable in every Snovalang program with
+// no import — construction (`Some(v)`, `None`, `Ok(v)`, `Err(e)`), pattern
+// matching, and methods (`isSome`, `unwrap`, `map`, ...) are handled by the
+// interpreter's generic enum/variant machinery plus the Stage-0 self-check's
+// builtin allowlist (`crates/snovalang/src/native/selfcheck/static_facts.rs`
+// `seed_builtins()`), independent of this file. This declaration exists so
+// the self-hosted compiler design and LSP tooling have a real `.snova`
+// source of truth for the shape of these types, matching how every other
+// builtin/stdlib type is documented — it intentionally carries no method
+// bodies, so it never competes with the proven Rust-side member table.
+
+// Explicit absence — `Some(value)` or `None`.
+@Documented(
+    description: "Represents an optional value: either Some(value) when a value is present, or None when it is absent. Use instead of null.",
+    example: "let found: Option<int> = Some(42)\nlet missing: Option<int> = None\nif found.isSome() { print(found.unwrap()) }"
+)
+enum Option<T> {
+    Some(value: T),
+    None,
+}
+
+extension Option<T> {
+    @Documented(description: "Returns true when the value is Some(...).", example: "if found.isSome() { ... }", returnType: bool)
+    method isSome(): bool
+
+    @Documented(description: "Returns true when the value is None.", example: "if found.isNone() { ... }", returnType: bool)
+    method isNone(): bool
+
+    @Documented(description: "Returns the wrapped value; fails at runtime on None.", example: "let v = found.unwrap()", returnType: T)
+    method unwrap(): T
+
+    @Documented(description: "Returns the wrapped value, or `default` on None.", example: "let v = found.unwrapOr(0)", args: "default: fallback when the value is None", returnType: T)
+    method unwrapOr(default: T): T
+
+    @Documented(description: "Returns the wrapped value, or the lambda's result on None.", example: "let v = found.unwrapOrElse(() -> 0)", args: "fallback: computes the value when None", returnType: T)
+    method unwrapOrElse(fallback: () -> T): T
+
+    @Documented(description: "Unwraps asserting the payload's declared type; fails at runtime on None or on a type mismatch.", example: "let entry = found.unwrapTo(CatalogEntry)", args: "type: the expected payload type", returnType: T)
+    method unwrapTo(type: any): T
+
+    @Documented(description: "Runs the handler with the wrapped value when Some; returns the original Option so calls chain.", example: "found.unwrapIf((entry) -> print(entry.name))", args: "handler: receives the wrapped value when present", returnType: Option<T>)
+    method unwrapIf(handler: (T) -> unit): Option<T>
+
+    @Documented(description: "Transforms the wrapped value when Some; None stays None.", example: "let doubled = Some(21).map((x) -> x * 2)", args: "transform: maps the wrapped value", returnType: Option<any>)
+    method map(transform: (T) -> any): Option<any>
+}
+
+// Typed recoverable failure — `Ok(value)` or `Err(error)`.
+@Documented(
+    description: "Represents either success (Ok(value)) or a typed, recoverable failure (Err(error)). Use for operations that can fail without throwing.",
+    example: "let parsed: Result<int, string> = Ok(10)\nmatch parsed {\n    Ok(value) -> print(value)\n    Err(message) -> print(message)\n}"
+)
+enum Result<T, E> {
+    Ok(value: T),
+    Err(error: E),
+}
+
+extension Result<T, E> {
+    @Documented(description: "Returns true when the value is Ok(...).", example: "if parsed.isOk() { ... }", returnType: bool)
+    method isOk(): bool
+
+    @Documented(description: "Returns true when the value is Err(...).", example: "if parsed.isErr() { ... }", returnType: bool)
+    method isErr(): bool
+
+    @Documented(description: "Returns the success value; fails at runtime on Err.", example: "let v = parsed.unwrap()", returnType: T)
+    method unwrap(): T
+
+    @Documented(description: "Returns the success value, or `default` on Err.", example: "let v = parsed.unwrapOr(0)", args: "default: fallback when the value is Err", returnType: T)
+    method unwrapOr(default: T): T
+
+    @Documented(description: "Returns the success value, or the lambda's result on Err.", example: "let v = parsed.unwrapOrElse(() -> 0)", args: "fallback: computes the value when Err", returnType: T)
+    method unwrapOrElse(fallback: () -> T): T
+
+    @Documented(description: "Unwraps asserting the payload's declared type; fails at runtime on Err or on a type mismatch.", example: "let entry = parsed.unwrapTo(CatalogEntry)", args: "type: the expected payload type", returnType: T)
+    method unwrapTo(type: any): T
+
+    @Documented(description: "Runs the handler with the success value when Ok; returns the original Result so calls chain.", example: "parsed.unwrapIf((value) -> print(value))", args: "handler: receives the success value when present", returnType: Result<T, E>)
+    method unwrapIf(handler: (T) -> unit): Result<T, E>
+
+    @Documented(description: "Transforms the success value when Ok; Err passes through.", example: "let doubled = Ok(21).map((x) -> x * 2)", args: "transform: maps the success value", returnType: Result<any, E>)
+    method map(transform: (T) -> any): Result<any, E>
+}

@@ -1,0 +1,31 @@
+package tests.packages.pulsar_symbols
+
+
+import builtin.channels.Channels
+import builtin.pulsars.Pulsars
+import builtin.console.Console
+
+
+pulsar func streamRange(max: int) ~> Channel<int> {
+    var i = 0
+    while i < max {
+        return Channel.send(i)
+        i = i + 1
+    }
+}
+
+pulsar func oneShot(n: int): Channel<int> {
+    return unit
+}
+
+pulsar func voidWorker(msg: string): unit {
+    Console.printline(msg)
+}
+
+func main(): int {
+    let ch = pulsar streamRange(3)
+    let shot = pulsar oneShot(4)
+    pulsar voidWorker("ok")
+    Pulsars.yield()
+    return 0
+}

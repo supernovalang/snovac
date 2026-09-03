@@ -1,0 +1,32 @@
+package tests.packages.httpinterceptor
+
+
+import builtin.http.Http
+
+
+// `HttpInterceptor` gives handlers a typed `HttpContext` (Context.snova's
+// cancellation/deadline/value bag, plus the incoming request) instead of a
+// bare `IncomingRequest`, and short-circuits the chain simply by returning a
+// response instead of calling `next.proceed(ctx)` — see HttpInterceptor.snova.
+
+struct ApiError {
+    let code: string
+    let message: string
+}
+
+class AuthInterceptor : HttpInterceptor {
+    method intercept(ctx: HttpContext, next: HttpNext): Task<HttpResponse<HttpBody, HttpError>> {
+        let header = ctx.incomingRequest().requireHeader("Authorization")
+        if header.isErr() {
+            return HttpResponse<HttpBody, HttpError>.badRequest(HttpBody.fromString("missing Authorization header"))
+        }
+        return next.proceed(ctx)
+    }
+}
+
+func main(): int {
+    let server = HttpServer.new()
+        .intercept(AuthInterceptor())
+
+    return 0
+}

@@ -1,0 +1,32 @@
+package tests.packages.decorator_registration_symbols
+
+import builtin.runtimehost.RuntimeHost
+
+func registerSampleDecorators(): unit {
+    let r1: Result<unit, string> = registerDecorator(
+        "SampleGet",
+        "builtin.test.Test",
+        [ExtensionTargetKind.Function],
+        ExtensionPhase.CompileTimeValidate,
+        "test.sample.get",
+        "test.route.get",
+        "Sample GET decorator"
+    )
+    let _r1 = r1
+
+    let r2: Result<unit, string> = DecoratorBuilder.named("SamplePost")
+        .forPackage("builtin.test.Test")
+        .onFunctionsAndMethods()
+        .atCompileTime("test.sample.post")
+        .withRuntimeHook("test.route.post")
+        .withDescription("Sample POST decorator")
+        .register()
+    let _r2 = r2
+}
+
+func main(): int {
+    registerSampleDecorators()
+    let ext = RuntimeExtensionRegistry.lookup("SampleGet")
+    let _ext = ext
+    return 0
+}

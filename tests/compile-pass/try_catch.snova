@@ -1,0 +1,47 @@
+package tests.try_catch
+
+
+import builtin.errors.Errors
+
+
+// try-catch block form
+func withTryCatch(input: string): string {
+    try {
+        let value = parseInt(input)?
+        return value.toString()
+    } catch (err: ParseError) {
+        return "error"
+    } finally {
+        cleanup()
+    }
+}
+
+// try(expr) deferred form
+func withTryDeferred(input: string): int {
+    let handle = try(parseInt(input))
+    return handle.catch((err: ParseError) -> 0)
+}
+
+// Chained map + catch
+func withChain(input: string): int {
+    return try(parseInt(input))
+        .map((n) -> n * 2)
+        .catch((err: ParseError) -> -1)
+}
+
+// Multiple catch clauses
+func withMultipleCatch(input: string): string {
+    try {
+        let n = parseInt(input)?
+        let result = divide(n, 0)?
+        return result.toString()
+    } catch (err: ParseError) {
+        return "parse error"
+    } catch (err: MathError) {
+        return "math error"
+    }
+}
+
+func main(): int {
+    return 0
+}

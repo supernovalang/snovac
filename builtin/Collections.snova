@@ -1,0 +1,409 @@
+package builtin.collections.Collections
+
+
+import builtin.metadata.Documented
+
+
+// ── List ─────────────────────────────────────────────────────────────────────
+
+// A resizable, ordered sequence with O(1) random access by index.
+// Backed by a contiguous array; insertions at arbitrary positions cost O(n).
+class List<T> {
+    @Documented(description: "Creates a new, empty list.", example: "let list = List<int>.new()", returnType: List<T>)
+    @native("snovalang_list_new")
+    static method new(): List<T>
+
+    @Documented(description: "Creates a list containing the given array's elements, in order.", example: "let list = List<int>.fromArray([1, 2, 3])", args: "items: elements to copy into the new list", returnType: List<T>)
+    @native("snovalang_list_from_array")
+    static method fromArray(items: Array<T>): List<T>
+
+    @Documented(description: "Returns the element at `index`. Panics when out of bounds.", example: "let first = list.get(0)", args: "index: position to read from", returnType: T)
+    @native("snovalang_list_get")
+    method get(index: int): T
+
+    @Documented(description: "Returns Some(element) at `index`, or None when index is out of range.", example: "let maybe = list.getSafe(10)\nif maybe.isNone() { print(\"out of range\") }", args: "index: position to read from", returnType: Option<T>)
+    @native("snovalang_list_get_safe")
+    method getSafe(index: int): Option<T>
+
+    @Documented(description: "Appends `value` to the end of the list. Amortized O(1).", example: "list.add(42)", args: "value: the element to append", returnType: unit)
+    @native("snovalang_list_add")
+    method add(value: T): unit
+
+    @Documented(description: "Inserts `value` at `index`, shifting subsequent elements right. O(n).", example: "list.insert(0, 99)", args: "index: position to insert at, value: the element to insert", returnType: unit)
+    @native("snovalang_list_insert")
+    method insert(index: int, value: T): unit
+
+    @Documented(description: "Removes and returns the element at `index`, shifting subsequent elements left. O(n).", example: "let removed = list.removeAt(0)", args: "index: position to remove", returnType: T)
+    @native("snovalang_list_remove_at")
+    method removeAt(index: int): T
+
+    @Documented(description: "Removes the first occurrence of `value`. Returns true when an element was found and removed.", example: "let removed = list.remove(42)", args: "value: the element to remove", returnType: bool)
+    @native("snovalang_list_remove")
+    method remove(value: T): bool
+
+    @Documented(description: "Replaces the element at `index` with `value`.", example: "list.set(0, 100)", args: "index: position to overwrite, value: the new element", returnType: unit)
+    @native("snovalang_list_set")
+    method set(index: int, value: T): unit
+
+    @Documented(description: "Returns true when `value` is present in the list.", example: "if list.contains(42) { print(\"found\") }", args: "value: the element to look for", returnType: bool)
+    @native("snovalang_list_contains")
+    method contains(value: T): bool
+
+    @Documented(description: "Returns Some(index) of the first occurrence of `value`, or None when absent.", example: "let idx = list.indexOf(42)", args: "value: the element to look for", returnType: Option<int>)
+    @native("snovalang_list_index_of")
+    method indexOf(value: T): Option<int>
+
+    @Documented(description: "Returns the number of elements in the list.", example: "print(list.length())", returnType: int)
+    @native("snovalang_list_length")
+    method length(): int
+
+    @Documented(description: "Returns true when the list has no elements.", example: "if list.isEmpty() { print(\"empty\") }", returnType: bool)
+    @native("snovalang_list_is_empty")
+    method isEmpty(): bool
+
+    @Documented(description: "Removes all elements from the list.", example: "list.clear()", returnType: unit)
+    @native("snovalang_list_clear")
+    method clear(): unit
+
+    @Documented(description: "Returns a plain array copy of the list's elements, in order.", example: "let arr = list.toArray()", returnType: Array<T>)
+    @native("snovalang_list_to_array")
+    method toArray(): Array<T>
+
+    @Documented(description: "Returns a new list containing elements in the range [from, to).", example: "let middle = list.slice(1, 3)", args: "from: inclusive start index, to: exclusive end index", returnType: List<T>)
+    @native("snovalang_list_slice")
+    method slice(from: int, to: int): List<T>
+
+    @Documented(description: "Returns a new list with the elements in reversed order.", example: "let rev = list.reversed()", returnType: List<T>)
+    @native("snovalang_list_reversed")
+    method reversed(): List<T>
+
+    @Documented(description: "Sorts the list in place using the natural ordering of T.", example: "list.sort()", returnType: unit)
+    @native("snovalang_list_sort")
+    method sort(): unit
+
+    @Documented(description: "Sorts the list in place using a custom comparator. Return negative when `a` should come before `b`.", example: "list.sortBy(func(a, b) { return a - b })", args: "comparator: negative when a should sort before b", returnType: unit)
+    @native("snovalang_list_sort_by")
+    method sortBy(comparator: func(T, T) -> int): unit
+
+    @Documented(description: "Returns a new list with `f` applied to every element.", example: "let doubled = list.map(func(x) { return x * 2 })", args: "f: transform applied to each element", returnType: List<U>)
+    @native("snovalang_list_map")
+    method map<U>(f: func(T) -> U): List<U>
+
+    @Documented(description: "Returns a new list containing only the elements for which `predicate` returns true.", example: "let evens = list.filter(func(x) { return x % 2 == 0 })", args: "predicate: kept when it returns true", returnType: List<T>)
+    @native("snovalang_list_filter")
+    method filter(predicate: func(T) -> bool): List<T>
+
+    @Documented(description: "Folds the list into a single value, starting from `initial` and combining with `f` left to right.", example: "let sum = list.reduce(0, func(acc, x) { return acc + x })", args: "initial: starting accumulator, f: combines the accumulator with each element", returnType: U)
+    @native("snovalang_list_reduce")
+    method reduce<U>(initial: U, f: func(U, T) -> U): U
+
+    @Documented(description: "Calls `action` once for every element, in order, for side effects.", example: "list.forEach(func(x) { print(x) })", args: "action: called once per element", returnType: unit)
+    @native("snovalang_list_for_each")
+    method forEach(action: func(T) -> unit): unit
+
+    @Documented(description: "Appends all elements from `other` to the end of this list.", example: "list.addAll(otherList)", args: "other: list whose elements are appended", returnType: unit)
+    @native("snovalang_list_add_all")
+    method addAll(other: List<T>): unit
+}
+
+// ── LinkedList ───────────────────────────────────────────────────────────────
+
+// A doubly linked list. O(1) insertions and removals at both ends;
+// O(n) random access. Prefer List<T> for indexed access.
+class LinkedList<T> {
+    @Documented(description: "Creates a new, empty linked list.", example: "let list = LinkedList<int>.new()", returnType: LinkedList<T>)
+    @native("snovalang_linked_list_new")
+    static method new(): LinkedList<T>
+
+    @Documented(description: "Adds `value` to the front (head) of the list. O(1).", example: "list.prepend(1)", args: "value: element to add at the head", returnType: unit)
+    @native("snovalang_linked_list_prepend")
+    method prepend(value: T): unit
+
+    @Documented(description: "Adds `value` to the back (tail) of the list. O(1).", example: "list.append(2)", args: "value: element to add at the tail", returnType: unit)
+    @native("snovalang_linked_list_append")
+    method append(value: T): unit
+
+    @Documented(description: "Removes and returns the head element, or None when empty. O(1).", example: "let head = list.popFront()", returnType: Option<T>)
+    @native("snovalang_linked_list_pop_front")
+    method popFront(): Option<T>
+
+    @Documented(description: "Removes and returns the tail element, or None when empty. O(1).", example: "let tail = list.popBack()", returnType: Option<T>)
+    @native("snovalang_linked_list_pop_back")
+    method popBack(): Option<T>
+
+    @Documented(description: "Returns the head element without removing it, or None when empty.", example: "let head = list.peekFront()", returnType: Option<T>)
+    @native("snovalang_linked_list_peek_front")
+    method peekFront(): Option<T>
+
+    @Documented(description: "Returns the tail element without removing it, or None when empty.", example: "let tail = list.peekBack()", returnType: Option<T>)
+    @native("snovalang_linked_list_peek_back")
+    method peekBack(): Option<T>
+
+    @Documented(description: "Returns the number of elements in the list.", example: "print(list.length())", returnType: int)
+    @native("snovalang_linked_list_length")
+    method length(): int
+
+    @Documented(description: "Returns true when the list has no elements.", example: "if list.isEmpty() { print(\"empty\") }", returnType: bool)
+    @native("snovalang_linked_list_is_empty")
+    method isEmpty(): bool
+
+    @Documented(description: "Returns a plain array copy of the list's elements, from head to tail.", example: "let arr = list.toArray()", returnType: Array<T>)
+    @native("snovalang_linked_list_to_array")
+    method toArray(): Array<T>
+
+    @Documented(description: "Returns true when `value` is present in the list.", example: "if list.contains(1) { print(\"found\") }", args: "value: the element to look for", returnType: bool)
+    @native("snovalang_linked_list_contains")
+    method contains(value: T): bool
+}
+
+// ── PriorityQueue ─────────────────────────────────────────────────────────────
+
+// A min-heap priority queue. The element with the lowest priority value is
+// dequeued first. Use a negated priority to simulate a max-heap.
+class PriorityQueue<T> {
+    @Documented(description: "Creates a new, empty min-heap priority queue using the natural ordering of T.", example: "let pq = PriorityQueue<int>.new()", returnType: PriorityQueue<T>)
+    @native("snovalang_priority_queue_new")
+    static method new(): PriorityQueue<T>
+
+    @Documented(description: "Creates a PriorityQueue ordered by a custom comparator. The comparator returns negative when `a` has higher priority than `b`.", example: "let pq = PriorityQueue<Task>.withComparator(func(a, b) { return a.priority - b.priority })", args: "comparator: negative when a has higher priority than b", returnType: PriorityQueue<T>)
+    @native("snovalang_priority_queue_with_comparator")
+    static method withComparator(comparator: func(T, T) -> int): PriorityQueue<T>
+
+    @Documented(description: "Adds `value` with its `priority`. Lower priority values are dequeued first.", example: "pq.enqueue(\"urgent\", 0)", args: "value: element to add, priority: lower values dequeue first", returnType: unit)
+    @native("snovalang_priority_queue_enqueue")
+    method enqueue(value: T, priority: int): unit
+
+    @Documented(description: "Removes and returns the element with the lowest priority, or None when empty.", example: "let next = pq.dequeue()", returnType: Option<T>)
+    @native("snovalang_priority_queue_dequeue")
+    method dequeue(): Option<T>
+
+    @Documented(description: "Returns the highest-priority element without removing it, or None when empty.", example: "let next = pq.peek()", returnType: Option<T>)
+    @native("snovalang_priority_queue_peek")
+    method peek(): Option<T>
+
+    @Documented(description: "Returns the number of elements in the queue.", example: "print(pq.length())", returnType: int)
+    @native("snovalang_priority_queue_length")
+    method length(): int
+
+    @Documented(description: "Returns true when the queue has no elements.", example: "if pq.isEmpty() { print(\"empty\") }", returnType: bool)
+    @native("snovalang_priority_queue_is_empty")
+    method isEmpty(): bool
+}
+
+// ── Tree ─────────────────────────────────────────────────────────────────────
+
+// An ordered binary search tree. Keys must be comparable with < and ==.
+// Iteration visits entries in ascending key order.
+class Tree<K, V> {
+    @Documented(description: "Creates a new, empty binary search tree.", example: "let tree = Tree<string, int>.new()", returnType: Tree<K, V>)
+    @native("snovalang_tree_new")
+    static method new(): Tree<K, V>
+
+    @Documented(description: "Returns Some(value) for `key`, or None when absent.", example: "let v = tree.get(\"a\")", args: "key: the lookup key", returnType: Option<V>)
+    @native("snovalang_tree_get")
+    method get(key: K): Option<V>
+
+    @Documented(description: "Inserts or replaces the value for `key`.", example: "tree.put(\"a\", 1)", args: "key: the entry's key, value: the value to store", returnType: unit)
+    @native("snovalang_tree_put")
+    method put(key: K, value: V): unit
+
+    @Documented(description: "Removes the entry for `key`. Returns true when the key was present.", example: "let removed = tree.remove(\"a\")", args: "key: the entry to remove", returnType: bool)
+    @native("snovalang_tree_remove")
+    method remove(key: K): bool
+
+    @Documented(description: "Returns true when `key` is present in the tree.", example: "if tree.contains(\"a\") { print(\"found\") }", args: "key: the key to look for", returnType: bool)
+    @native("snovalang_tree_contains")
+    method contains(key: K): bool
+
+    @Documented(description: "Returns the number of entries in the tree.", example: "print(tree.length())", returnType: int)
+    @native("snovalang_tree_length")
+    method length(): int
+
+    @Documented(description: "Returns true when the tree has no entries.", example: "if tree.isEmpty() { print(\"empty\") }", returnType: bool)
+    @native("snovalang_tree_is_empty")
+    method isEmpty(): bool
+
+    @Documented(description: "Returns all keys in ascending order.", example: "let ks = tree.keys()", returnType: Array<K>)
+    @native("snovalang_tree_keys")
+    method keys(): Array<K>
+
+    @Documented(description: "Returns all values in ascending key order.", example: "let vs = tree.values()", returnType: Array<V>)
+    @native("snovalang_tree_values")
+    method values(): Array<V>
+
+    @Documented(description: "Returns the entry with the smallest key, or None when the tree is empty.", example: "let smallest = tree.min()", returnType: Option<(K, V)>)
+    @native("snovalang_tree_min")
+    method min(): Option<(K, V)>
+
+    @Documented(description: "Returns the entry with the largest key, or None when the tree is empty.", example: "let largest = tree.max()", returnType: Option<(K, V)>)
+    @native("snovalang_tree_max")
+    method max(): Option<(K, V)>
+
+    @Documented(description: "Returns all entries with keys in [from, to], inclusive.", example: "let entries = tree.range(\"a\", \"m\")", args: "from: inclusive lower bound, to: inclusive upper bound", returnType: Array<(K, V)>)
+    @native("snovalang_tree_range")
+    method range(from: K, to: K): Array<(K, V)>
+
+    @Documented(description: "Returns the largest key strictly less than `key`, or None.", example: "let below = tree.floorKey(\"m\")", args: "key: the reference key", returnType: Option<K>)
+    @native("snovalang_tree_floor_key")
+    method floorKey(key: K): Option<K>
+
+    @Documented(description: "Returns the smallest key strictly greater than `key`, or None.", example: "let above = tree.ceilingKey(\"m\")", args: "key: the reference key", returnType: Option<K>)
+    @native("snovalang_tree_ceiling_key")
+    method ceilingKey(key: K): Option<K>
+}
+
+// ── Map ──────────────────────────────────────────────────────────────────────
+
+// An ordered key-value map. Keys are unique; insertion order is preserved.
+class Map<K, V> {
+    @Documented(description: "Creates a new, empty map.", example: "let map = Map<string, int>.new()", returnType: Map<K, V>)
+    @native("snovalang_map_new")
+    static method new(): Map<K, V>
+
+    @Documented(description: "Creates a map from an array of key-value pairs.", example: "let map = Map<string, int>.fromPairs([(\"a\", 1), (\"b\", 2)])", args: "pairs: array of key-value tuples", returnType: Map<K, V>)
+    @native("snovalang_map_from_pairs")
+    static method fromPairs(pairs: Array<any>): Map<K, V>
+
+    @Documented(description: "Returns the value for `key`, or None when absent.", example: "let v = map.get(\"a\")", args: "key: the lookup key", returnType: Option<V>)
+    @native("snovalang_map_get")
+    method get(key: K): Option<V>
+
+    @Documented(description: "Returns the value for `key`, or `default` when absent.", example: "let v = map.getOr(\"a\", 0)", args: "key: the lookup key, default: fallback when key is absent", returnType: V)
+    @native("snovalang_map_get_or")
+    method getOr(key: K, default: V): V
+
+    @Documented(description: "Returns a new map with the entry set (immutable update).", example: "let updated = map.set(\"a\", 1)", args: "key: the entry's key, value: the value to store", returnType: Map<K, V>)
+    @native("snovalang_map_set")
+    method set(key: K, value: V): Map<K, V>
+
+    @Documented(description: "Returns a new map without the entry for `key` (immutable update).", example: "let updated = map.remove(\"a\")", args: "key: the entry to remove", returnType: Map<K, V>)
+    @native("snovalang_map_remove")
+    method remove(key: K): Map<K, V>
+
+    @Documented(description: "Returns true when `key` is present in the map.", example: "if map.contains(\"a\") { print(\"found\") }", args: "key: the key to look for", returnType: bool)
+    @native("snovalang_map_contains")
+    method contains(key: K): bool
+
+    @Documented(description: "Returns all keys, in insertion order.", example: "let ks = map.keys()", returnType: Array<K>)
+    @native("snovalang_map_keys")
+    method keys(): Array<K>
+
+    @Documented(description: "Returns all values, in insertion order.", example: "let vs = map.values()", returnType: Array<V>)
+    @native("snovalang_map_values")
+    method values(): Array<V>
+
+    @Documented(description: "Returns the number of entries in the map.", example: "print(map.length())", returnType: int)
+    @native("snovalang_map_length")
+    method length(): int
+
+    @Documented(description: "Returns true when the map has no entries.", example: "if map.isEmpty() { print(\"empty\") }", returnType: bool)
+    @native("snovalang_map_is_empty")
+    method isEmpty(): bool
+}
+
+// ── Set ──────────────────────────────────────────────────────────────────────
+
+// An unordered collection of unique values.
+class Set<T> {
+    @Documented(description: "Creates a new, empty set.", example: "let set = Set<int>.new()", returnType: Set<T>)
+    @native("snovalang_set_new")
+    static method new(): Set<T>
+
+    @Documented(description: "Creates a set containing the given array's unique elements.", example: "let set = Set<int>.fromArray([1, 2, 2, 3])", args: "items: elements to copy into the new set", returnType: Set<T>)
+    @native("snovalang_set_from_array")
+    static method fromArray(items: Array<T>): Set<T>
+
+    @Documented(description: "Returns a new set with `value` added (immutable update).", example: "let updated = set.add(4)", args: "value: the element to add", returnType: Set<T>)
+    @native("snovalang_set_add")
+    method add(value: T): Set<T>
+
+    @Documented(description: "Returns a new set without `value` (immutable update).", example: "let updated = set.remove(4)", args: "value: the element to remove", returnType: Set<T>)
+    @native("snovalang_set_remove")
+    method remove(value: T): Set<T>
+
+    @Documented(description: "Returns true when `value` is present in the set.", example: "if set.contains(4) { print(\"found\") }", args: "value: the element to look for", returnType: bool)
+    @native("snovalang_set_contains")
+    method contains(value: T): bool
+
+    @Documented(description: "Returns the number of elements in the set.", example: "print(set.length())", returnType: int)
+    @native("snovalang_set_length")
+    method length(): int
+
+    @Documented(description: "Returns true when the set has no elements.", example: "if set.isEmpty() { print(\"empty\") }", returnType: bool)
+    @native("snovalang_set_is_empty")
+    method isEmpty(): bool
+
+    @Documented(description: "Returns a plain array copy of the set's elements.", example: "let arr = set.toArray()", returnType: Array<T>)
+    @native("snovalang_set_to_array")
+    method toArray(): Array<T>
+
+    @Documented(description: "Returns a new set containing every element present in either set.", example: "let combined = set.union(otherSet)", args: "other: the set to union with", returnType: Set<T>)
+    @native("snovalang_set_union")
+    method union(other: Set<T>): Set<T>
+
+    @Documented(description: "Returns a new set containing only elements present in both sets.", example: "let shared = set.intersection(otherSet)", args: "other: the set to intersect with", returnType: Set<T>)
+    @native("snovalang_set_intersection")
+    method intersection(other: Set<T>): Set<T>
+
+    @Documented(description: "Returns a new set containing elements present in this set but not in `other`.", example: "let onlyMine = set.difference(otherSet)", args: "other: the set whose elements are excluded", returnType: Set<T>)
+    @native("snovalang_set_difference")
+    method difference(other: Set<T>): Set<T>
+}
+
+// ── Stack ────────────────────────────────────────────────────────────────────
+
+// A LIFO (last-in, first-out) collection.
+class Stack<T> {
+    @Documented(description: "Creates a new, empty stack.", example: "let stack = Stack<int>.new()", returnType: Stack<T>)
+    @native("snovalang_stack_new")
+    static method new(): Stack<T>
+
+    @Documented(description: "Pushes `value` onto the top of the stack.", example: "stack.push(1)", args: "value: the element to push", returnType: unit)
+    @native("snovalang_stack_push")
+    method push(value: T): unit
+
+    @Documented(description: "Removes and returns the top value, or None when empty.", example: "let top = stack.pop()", returnType: Option<T>)
+    @native("snovalang_stack_pop")
+    method pop(): Option<T>
+
+    @Documented(description: "Returns the top value without removing it, or None when empty.", example: "let top = stack.peek()", returnType: Option<T>)
+    @native("snovalang_stack_peek")
+    method peek(): Option<T>
+
+    @Documented(description: "Returns the number of elements in the stack.", example: "print(stack.length())", returnType: int)
+    @native("snovalang_stack_length")
+    method length(): int
+
+    @Documented(description: "Returns true when the stack has no elements.", example: "if stack.isEmpty() { print(\"empty\") }", returnType: bool)
+    @native("snovalang_stack_is_empty")
+    method isEmpty(): bool
+}
+
+// ── Queue ────────────────────────────────────────────────────────────────────
+
+// A FIFO (first-in, first-out) collection.
+class Queue<T> {
+    @Documented(description: "Creates a new, empty FIFO queue.", example: "let queue = Queue<int>.new()", returnType: Queue<T>)
+    @native("snovalang_queue_new")
+    static method new(): Queue<T>
+
+    @Documented(description: "Adds `value` to the back of the queue.", example: "queue.enqueue(1)", args: "value: the element to add", returnType: unit)
+    @native("snovalang_queue_enqueue")
+    method enqueue(value: T): unit
+
+    @Documented(description: "Removes and returns the front value, or None when empty.", example: "let next = queue.dequeue()", returnType: Option<T>)
+    @native("snovalang_queue_dequeue")
+    method dequeue(): Option<T>
+
+    @Documented(description: "Returns the front value without removing it, or None when empty.", example: "let next = queue.peek()", returnType: Option<T>)
+    @native("snovalang_queue_peek")
+    method peek(): Option<T>
+
+    @Documented(description: "Returns the number of elements in the queue.", example: "print(queue.length())", returnType: int)
+    @native("snovalang_queue_length")
+    method length(): int
+
+    @Documented(description: "Returns true when the queue has no elements.", example: "if queue.isEmpty() { print(\"empty\") }", returnType: bool)
+    @native("snovalang_queue_is_empty")
+    method isEmpty(): bool
+}

@@ -1,0 +1,14 @@
+package tests.packages.scheduler_policy_symbols
+
+import builtin.schedulerpolicy.SchedulerPolicy
+
+func main(): int {
+    let deque: WorkDeque = WorkDeque.withCapacity(8)
+    let pushed: bool = deque.push(1)
+    let engine: SchedulerPolicyEngine = SchedulerPolicyEngine.new(2, 8)
+    let counters: SchedulerCounters = engine.counters()
+    if !pushed || counters.steals < 0 {
+        return 1
+    }
+    return 0
+}

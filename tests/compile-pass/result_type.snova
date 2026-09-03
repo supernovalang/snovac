@@ -1,0 +1,17 @@
+package tests.result
+
+
+func divide(a: int, b: int): Result<int, string> {
+    if b == 0 {
+        return Result.err("division by zero")
+    }
+    return Result.ok(a / b)
+}
+
+func main(): int {
+    let r = divide(10, 2)
+    return match r {
+        Result.Ok(_) -> 0
+        Result.Err(_) -> 1
+    }
+}

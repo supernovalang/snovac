@@ -100,4 +100,9 @@ SnTypeRep *sn_type_array(SnTypeTable *t, SnTypeRep *elem);
  * not because it does anything `==` doesn't. */
 int sn_type_equals(const SnTypeRep *a, const SnTypeRep *b);
 
+/* Substitutes generic type parameters named in `param_names` with `arg_types`. */
+SnTypeRep *sn_type_subst_names(SnTypeTable *t, SnTypeRep *ty,
+                               const char *const *param_names,
+                               SnTypeRep *const *arg_types, uint32_t count);
+
 #endif /* SNOVAC_TYPES_H */

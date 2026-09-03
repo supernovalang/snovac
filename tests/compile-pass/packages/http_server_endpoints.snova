@@ -1,0 +1,109 @@
+package tests.packages.httpserver
+
+
+import builtin.http.Http
+import builtin.errors.Errors
+
+
+@GetRequest("/", mediaType = "application/json", headers = [])
+async func home(req: http.IncomingRequest): Task<http.HttpResponse<HttpBody, HttpError>> {
+    return ok(HttpBody.fromString("{\"ok\":true}"))
+}
+
+@PostRequest("/echo", mediaType = "text/plain", headers = [])
+async func echo(req: http.IncomingRequest): Task<http.HttpResponse<HttpBody, HttpError>> {
+    let text: Result<string, HttpError> = await req.text()
+    return ok(HttpBody.fromString("echo"))
+}
+
+struct CreateUserRequest {
+    let email: string
+}
+
+struct UserDto {
+    let id: string
+    let email: string
+}
+
+struct HttpHeader {
+    let key: string
+    let value: string
+}
+
+struct HttpRoute {
+    let httpMethod: HttpMethod
+    let path: string
+    let mediaType: string
+    let headers: Array<HttpHeader>
+    let handler: any
+}
+
+// Implements `Errors.ProblemDetails` structurally — no inheritance required.
+struct ValidationProblem : ProblemDetails {
+    let field: string
+    let reason: string
+
+    method typeUri(): string {
+        return "about:blank"
+    }
+
+    method title(): string {
+        return "Validation failed"
+    }
+
+    method status(): int {
+        return 400
+    }
+
+    method detail(): string {
+        return field + ": " + reason
+    }
+
+    method instance(): string {
+        return ""
+    }
+}
+
+// Guarantees a typed request body and returns either a typed success value
+// or a typed problem payload — never `any`.
+@PostRequest("/users", mediaType = "application/json", headers = [])
+async func createUser(body: http.HttpRequestBody<CreateUserRequest>): Task<http.HttpResult<UserDto, ValidationProblem>> {
+    if body.get().email == "" {
+        return http.HttpResult<UserDto, ValidationProblem>.problem(ValidationProblem("email", "must not be empty"))
+    }
+    return http.HttpResult<UserDto, ValidationProblem>.success(UserDto("1", body.get().email))
+}
+
+@Paginated(defaultPageSize = 20, maxPageSize = 100)
+@GetRequest("/users", mediaType = "application/json", headers = [])
+async func listUsers(req: http.IncomingRequest): Task<http.HttpResponse<Page<UserDto>, ValidationProblem>> {
+    let pageRequest = req.pageRequest()
+    let items = Array<UserDto>.new()
+    items.push(UserDto("1", "a@b.com"))
+    return ok(Page<UserDto>.of(items, pageRequest, 1))
+}
+
+async func main(): Task<int> {
+    let headers = Array<http.HttpHeader>.new()
+    headers.push(http.HttpHeader("Cache-Control", "no-store"))
+
+    let server = http.HttpServer.new()
+        .get("/", home)
+        .postWith("/echo", "text/plain", headers, echo)
+        .listenOn(8080)
+
+    let configured = http.HttpServer.withOptions(http.HttpServerOptions.onPort(9090))
+        .mountDecorated(unit)
+        .addMountDecorated(unit)
+        .mountDecoratedPackage("tests.packages")
+        .mountDecoratedAll()
+
+    let route = http.HttpRoute(http.HttpMethod.Get, "/health", "application/json", headers, home)
+    let mounted = configured.routeSpec(route)
+    let result = mounted.listenWithOptions(http.HttpServerOptions.onPort(9091))
+
+    let page = Page<UserDto>.of(Array<UserDto>.new(), http.PageRequest.of(1, 20), 0)
+    let totalPages = page.totalPages()
+
+    return 0
+}

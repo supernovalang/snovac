@@ -1,0 +1,1 @@
+error[SNOVA047]: `total` is an immutable `let` binding and cannot be reassigned.

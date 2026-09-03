@@ -1,0 +1,30 @@
+package tests.extension
+
+
+class Counter {
+    private var value: Int
+
+    method increment(): Int {
+        value += 1
+        return value
+    }
+
+    method reset(): Unit {
+        value = 0
+    }
+}
+
+extension Counter {
+    func isZero(): Bool = value == 0
+    func doubleIncrement(): Int {
+        increment()
+        return increment()
+    }
+}
+
+func main(): Int {
+    let c = Counter(0)
+    c.increment()
+    c.increment()
+    return 0
+}

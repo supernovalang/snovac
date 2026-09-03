@@ -1,0 +1,25 @@
+package tests.run_pass.partial_type_construct
+
+
+import builtin.console.Console
+
+
+// Smoke test: constructing a `Partial<User>` and reading one of its real
+// fields must actually run via `snova run`/`snova build` today, not just
+// type-check — see tests/compile-pass/partial_type.snova for the fuller
+// type-checking coverage and tests/compile-fail/partial_type_unknown_field.snova
+// for the rejection case. Kept to a single printed literal because the
+// Stage-0 Runner only pre-evaluates a narrow set of expression shapes (see
+// its own error hint) — the same constraint every other run-pass fixture in
+// this suite is already written around.
+
+struct User {
+    name: string
+    age: int
+}
+
+func main(): int {
+    let user = Partial<User>(name: "Ada", age: 36)
+    Console.printline("ok")
+    return 0
+}

@@ -1,0 +1,18 @@
+package tests.enums
+
+
+enum Direction { North South East West }
+
+func opposite(d: Direction): Direction {
+    return match d {
+        Direction.North -> Direction.South
+        Direction.South -> Direction.North
+        Direction.East -> Direction.West
+        Direction.West -> Direction.East
+    }
+}
+
+func main(): Int {
+    let d = opposite(Direction.North)
+    return 0
+}

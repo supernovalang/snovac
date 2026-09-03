@@ -1,0 +1,14 @@
+package test.library.module
+
+import builtin.runtimehost.RuntimeHost
+
+// Library modules export API surface only — no `func main` required when
+// the enclosing project declares `kind = "lib"` in snova.toml.
+
+public func greet(name: string): string {
+    return "hello, " + name
+}
+
+public struct Config {
+    public let port: int
+}

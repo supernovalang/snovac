@@ -1,0 +1,7 @@
+package tests.packages.failconsole
+
+
+func main(): int {
+    Console.printline("missing import")
+    return 0
+}

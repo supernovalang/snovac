@@ -1,0 +1,1 @@
+error[SNOVA126]: Type `Widget` is not `Send` and cannot cross a pulsar boundary.

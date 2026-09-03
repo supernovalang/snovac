@@ -1,0 +1,2 @@
+error[SNOVA027]: Unknown type `HttpClient`. Declare it or import the package that provides it.
+error[SNOVA035]: `.json<Array<ResponseDto>>()` decodes `Array<ResponseDto>` but the binding is annotated `ResponseDto`; make the annotation `Array<ResponseDto>` or the generic `ResponseDto`.

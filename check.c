@@ -265,6 +265,9 @@ static SnTypeRep *func_like_type(SnChecker *c, const SnDecl *decl) {
 }
 
 static SnTypeRep *symbol_type_in_scope(SnChecker *c, SnSymbol *sym);
+static void bind_pattern_names(SnChecker *c, SnScope *scope, const SnPattern *pat);
+static void check_match_exhaustiveness(SnChecker *c, const SnTypeRep *target_ty,
+                                       const SnList *arms, SnSpan span);
 
 /* True when `sym` was declared in a file other than the one being checked.
  * Resolving such a symbol's declared types re-runs name resolution in the
@@ -533,6 +536,18 @@ static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
                         "`%s` is private to `%s`", e->text, target_ty->decl->name);
         }
         SnTypeRep *mty = symbol_type(c, msym);
+        if (target_ty->nargs > 0 && target_ty->decl && target_ty->decl->decl &&
+            target_ty->decl->decl->generics.len > 0) {
+            uint32_t count = (uint32_t)target_ty->decl->decl->generics.len;
+            if (count > target_ty->nargs) {
+                count = target_ty->nargs;
+            }
+            const char **param_names = (const char **)sn_arena_alloc(c->arena, count * sizeof(const char *));
+            for (uint32_t gi = 0; gi < count; gi++) {
+                param_names[gi] = SN_LIST_AT(target_ty->decl->decl->generics, const char, gi);
+            }
+            mty = sn_type_subst_names(c->types, mty, param_names, target_ty->args, count);
+        }
         if (is_qdot && is_opt_base && !is_error(mty)) {
             mty = sn_builtin_generic(c->types, c->intern, sn_intern_cstr(c->intern, "Option"), &mty, 1);
         }
@@ -570,7 +585,7 @@ static SnTypeRep *check_binary(SnChecker *c, SnExpr *e, SnTypeRep *lt, SnTypeRep
         if (lt->tag == SN_T_STRING && rt->tag == SN_T_STRING) {
             return sn_type_string(c->types);
         }
-        /* fallthrough: numeric + */
+        /* fallthrough */
     case SN_TOK_MINUS:
     case SN_TOK_STAR:
     case SN_TOK_SLASH:
@@ -1160,11 +1175,48 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
         break;
     }
 
-    case SN_EXPR_MATCH:
-    case SN_EXPR_IF:
+    case SN_EXPR_IF: {
+        if (e->lhs) {
+            sn_check_expr(c, local, e->lhs);
+        }
+        SnTypeRep *then_ty = e->rhs ? sn_check_expr(c, local, e->rhs) : sn_type_unit(c->types);
+        SnTypeRep *else_ty = e->value ? sn_check_expr(c, local, e->value) : sn_type_unit(c->types);
+        if (e->body) {
+            sn_check_stmt(c, local, e->body);
+        }
+        if (e->else_body) {
+            sn_check_stmt(c, local, e->else_body);
+        }
+        result = !is_error(then_ty) ? then_ty : else_ty;
+        break;
+    }
+    case SN_EXPR_MATCH: {
+        SnTypeRep *target_ty = e->lhs ? sn_check_expr(c, local, e->lhs) : NULL;
+        check_match_exhaustiveness(c, target_ty, &e->arms, e->span);
+        SnTypeRep *inferred = NULL;
+        for (size_t i = 0; i < e->arms.len; i++) {
+            SnMatchArm *arm = SN_LIST_AT(e->arms, SnMatchArm, i);
+            SnScope arm_scope;
+            sn_scope_init(&arm_scope, c->arena, local);
+            bind_pattern_names(c, &arm_scope, arm->pattern);
+            if (arm->guard) {
+                sn_check_expr(c, &arm_scope, arm->guard);
+            }
+            SnTypeRep *arm_ty = NULL;
+            if (arm->value) {
+                arm_ty = sn_check_expr(c, &arm_scope, arm->value);
+            }
+            if (arm->body) {
+                sn_check_stmt(c, &arm_scope, arm->body);
+            }
+            if (arm_ty && !is_error(arm_ty) && !inferred) {
+                inferred = arm_ty;
+            }
+        }
+        result = inferred ? inferred : sn_type_unit(c->types);
+        break;
+    }
     case SN_EXPR_STRUCT_LIT:
-        /* Own result type not computed in this pass — see check.h. Children
-         * are still walked below so nested checks aren't lost. */
         if (e->lhs) {
             sn_check_expr(c, local, e->lhs);
         }
@@ -1173,24 +1225,6 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
         }
         for (size_t i = 0; i < e->args.len; i++) {
             sn_check_expr(c, local, SN_LIST_AT(e->args, SnExpr, i));
-        }
-        for (size_t i = 0; i < e->arms.len; i++) {
-            SnMatchArm *arm = SN_LIST_AT(e->arms, SnMatchArm, i);
-            if (arm->guard) {
-                sn_check_expr(c, local, arm->guard);
-            }
-            if (arm->value) {
-                sn_check_expr(c, local, arm->value);
-            }
-            if (arm->body) {
-                sn_check_stmt(c, local, arm->body);
-            }
-        }
-        if (e->body) {
-            sn_check_stmt(c, local, e->body);
-        }
-        if (e->else_body) {
-            sn_check_stmt(c, local, e->else_body);
         }
         result = sn_type_error(c->types);
         break;
@@ -1202,6 +1236,48 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
 
     e->resolved_type = result;
     return result;
+}
+
+static void check_match_exhaustiveness(SnChecker *c, const SnTypeRep *target_ty,
+                                       const SnList *arms, SnSpan span) {
+    if (!target_ty || is_error(target_ty) || sn_type_is_any(target_ty) || !arms || arms->len == 0) {
+        return;
+    }
+    for (size_t i = 0; i < arms->len; i++) {
+        const SnMatchArm *arm = SN_LIST_AT(*arms, SnMatchArm, i);
+        if (arm->guard) continue;
+        if (!arm->pattern || arm->pattern->kind == SN_PAT_WILDCARD ||
+            arm->pattern->kind == SN_PAT_BINDING) {
+            return; /* Catch-all / wildcard covers all remaining branches */
+        }
+    }
+    if (target_ty->tag == SN_T_NAMED && target_ty->decl && target_ty->decl->decl &&
+        target_ty->decl->decl->kind == SN_DECL_ENUM) {
+        const SnDecl *enum_decl = target_ty->decl->decl;
+        size_t total_variants = enum_decl->members.len;
+        if (total_variants == 0) return;
+
+        for (size_t vi = 0; vi < total_variants; vi++) {
+            const SnDecl *v = SN_LIST_AT(enum_decl->members, SnDecl, vi);
+            int covered = 0;
+            for (size_t ai = 0; ai < arms->len; ai++) {
+                const SnMatchArm *arm = SN_LIST_AT(*arms, SnMatchArm, ai);
+                if (arm->guard) continue;
+                if (arm->pattern && arm->pattern->kind == SN_PAT_VARIANT &&
+                    arm->pattern->name && v->name &&
+                    strcmp(arm->pattern->name, v->name) == 0) {
+                    covered = 1;
+                    break;
+                }
+            }
+            if (!covered) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_NON_EXHAUSTIVE_MATCH, span,
+                             "non-exhaustive match on `%s`: missing variant `%s`",
+                             enum_decl->name, v->name);
+                break;
+            }
+        }
+    }
 }
 
 /* ── statements ───────────────────────────────────────────────────────────── */
@@ -1410,10 +1486,9 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
         }
         break;
 
-    case SN_STMT_MATCH:
-        if (s->expr) {
-            sn_check_expr(c, local, s->expr);
-        }
+    case SN_STMT_MATCH: {
+        SnTypeRep *target_ty = s->expr ? sn_check_expr(c, local, s->expr) : NULL;
+        check_match_exhaustiveness(c, target_ty, &s->arms, s->span);
         for (size_t i = 0; i < s->arms.len; i++) {
             SnMatchArm *arm = SN_LIST_AT(s->arms, SnMatchArm, i);
             SnScope arm_scope;
@@ -1430,6 +1505,7 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
             }
         }
         break;
+    }
 
     case SN_STMT_PULSAR:
         if (s->expr) {

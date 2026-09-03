@@ -1,0 +1,33 @@
+package tests.generics_map_subscript
+
+
+import builtin.console.Console
+
+
+// Regression: a `Map<K, V>` receiver (declared as a nested-generic parameter
+// or inferred from `Map<K, V>.new()`) must accept `value[key]` subscripts,
+// including string-literal keys — the top-level comma inside the generic
+// argument list and the blanked string literal both used to trip a spurious
+// SNOVA029.
+
+class CatalogEntry {
+    var dep_key: string
+    var stems: string
+}
+
+func lookupStems(artifacts: Map<string, CatalogEntry>, depKey: string): string {
+    val entry = artifacts[depKey]
+    return entry.stems
+}
+
+func pickJoined(values: Map<string, int>, a: string, b: string): int {
+    let joined = values[a + "," + b]
+    return joined
+}
+
+func main(): int {
+    let m = Map<string, int>.new()
+    let v = m["a"]
+    Console.printline("ok")
+    return 0
+}

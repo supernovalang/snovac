@@ -1,0 +1,20 @@
+package tests.packages.strings
+
+
+import builtin.console.Console
+import builtin.errors.Errors
+import builtin.format.Format
+import builtin.strings.Strings
+
+
+func main(): int {
+    Console.printline(Strings.contains("snovalang", "nova"))
+    Console.printline(Strings.trim("  padded  "))
+    Console.printline(Strings.compare("apple", "banana"))
+    Console.printline(Strings.compareIgnoreCase("ABC", "abc"))
+    Console.printline(Strings.equals("a", "a"))
+    Console.printline(Strings.equalsIgnoreCase("ABC", "abc"))
+    Console.printline(Format.format("hello {0}", "world"))
+    Console.printline(Errors.new("failed"))
+    return 0
+}

@@ -13,7 +13,8 @@
 set -eu
 
 SNOVAC="${1:-build/snovac}"
-ROOT="${2:-../tests}"
+ROOT="${2:-tests}"
+[ -d "$ROOT" ] || ROOT="$PWD/tests"
 case "$SNOVAC" in /*) ;; *) SNOVAC="$PWD/$SNOVAC" ;; esac
 case "$ROOT" in /*) ;; *) ROOT="$PWD/$ROOT" ;; esac
 

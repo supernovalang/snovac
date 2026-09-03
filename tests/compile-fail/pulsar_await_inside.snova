@@ -1,0 +1,11 @@
+package tests.pulsar_await_inside
+
+import builtin.channels.Channels
+
+pulsar func worker(ch: Channel<int>): unit {
+    let v = await ch.receive()
+}
+
+func main(): int {
+    return 0
+}

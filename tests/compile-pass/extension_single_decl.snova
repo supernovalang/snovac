@@ -1,0 +1,47 @@
+package tests.extension_single_decl
+
+// Kotlin/C#-style single-declaration extension syntax: `extension Type.method(...)`,
+// additive sugar over the existing `extension Type { func method(...) {} }` block form.
+
+class Counter {
+    private var value: Int
+
+    method increment(): Int {
+        value += 1
+        return value
+    }
+}
+
+// no visibility modifier, expression body
+extension Counter.isZero(): Bool = value == 0
+
+// explicit `public`, block body calling another member (including a
+// private extension member of the same type — `reset` below)
+public extension Counter.doubleIncrement(): Int {
+    increment()
+    reset()
+    return increment()
+}
+
+// explicit `private`
+private extension Counter.reset(): Unit {
+    value = 0
+}
+
+// generic target type, `->` return arrow
+public extension Pairs<K, V>.swap() -> Pairs<V, K> {
+    return this
+}
+
+struct Pairs<K, V> {
+    left: K
+    right: V
+}
+
+func main(): Int {
+    let c = Counter(0)
+    c.increment()
+    c.isZero()
+    c.doubleIncrement()
+    return 0
+}

@@ -1,0 +1,17 @@
+package tests.bad
+
+
+import builtin.console.Console
+
+
+// error[SNOVA024]: an assignment must have a right-hand side.
+// Snovalang uses newlines and `;` as statement delimiters, so `let todoId =`
+// reaches a delimiter with nothing after the `=`. This dangling assignment is
+// an incomplete statement and must be rejected at compile time rather than
+// silently accepted by the Stage-0 runner.
+
+func main(): int {
+    let todoId =
+    Console.printline("Todo")
+    return 0
+}

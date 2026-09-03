@@ -1,0 +1,148 @@
+package builtin.strings.Strings
+
+
+// Errors that arise from string parsing or index operations.
+enum StringError {
+    ParseInt(input: string),
+    ParseDecimal(input: string),
+    ParseBool(input: string),
+    InvalidIndex(index: int, len: int),
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+
+@native("snovalang_strings_contains")
+func contains(value: string, needle: string): bool
+
+@native("snovalang_strings_starts_with")
+func startsWith(value: string, prefix: string): bool
+
+@native("snovalang_strings_ends_with")
+func endsWith(value: string, suffix: string): bool
+
+// Returns the index of the first occurrence of `needle`, measured in code points.
+@native("snovalang_strings_index_of")
+func indexOf(value: string, needle: string): Option<int>
+
+@native("snovalang_strings_last_index_of")
+func lastIndexOf(value: string, needle: string): Option<int>
+
+// ── Comparison ─────────────────────────────────────────────────────────────
+
+// Lexicographically compares `a` to `b` by Unicode code point, returning a
+// negative value when `a` sorts before `b`, zero when they are equal, and a
+// positive value when `a` sorts after `b`.
+@native("snovalang_strings_compare")
+func compare(a: string, b: string): int
+
+// Case-insensitive version of `compare`, comparing `a` and `b` as if both
+// were lowercased first.
+@native("snovalang_strings_compare_ignore_case")
+func compareIgnoreCase(a: string, b: string): int
+
+// Returns true when `a` and `b` are exactly equal (same code points).
+@native("snovalang_strings_equals")
+func equals(a: string, b: string): bool
+
+// Returns true when `a` and `b` are equal after lowercasing both.
+@native("snovalang_strings_equals_ignore_case")
+func equalsIgnoreCase(a: string, b: string): bool
+
+// ── Split and join ─────────────────────────────────────────────────────────
+
+// Splits `value` on every occurrence of `separator`.
+// When `separator` is empty, splits into individual Unicode code points.
+@native("snovalang_strings_split")
+func split(value: string, separator: string): Array<string>
+
+// Like split but produces at most `n` parts; the last part contains the remainder.
+@native("snovalang_strings_split_n")
+func splitN(value: string, separator: string, n: int): Array<string>
+
+// Joins `parts` with `separator` between each element.
+@native("snovalang_strings_join")
+func join(parts: Array<string>, separator: string): string
+
+// Splits `value` into lines, stripping line endings.
+@native("snovalang_strings_lines")
+func lines(value: string): Array<string>
+
+// ── Transformation ─────────────────────────────────────────────────────────
+
+@native("snovalang_strings_trim")
+func trim(value: string): string
+
+@native("snovalang_strings_trim_start")
+func trimStart(value: string): string
+
+@native("snovalang_strings_trim_end")
+func trimEnd(value: string): string
+
+@native("snovalang_strings_to_upper")
+func toUpper(value: string): string
+
+@native("snovalang_strings_to_lower")
+func toLower(value: string): string
+
+// Replaces all non-overlapping occurrences of `from` with `to`.
+@native("snovalang_strings_replace")
+func replace(value: string, from: string, to: string): string
+
+// Replaces only the first occurrence of `from` with `to`.
+@native("snovalang_strings_replace_first")
+func replaceFirst(value: string, from: string, to: string): string
+
+// Returns `value` repeated `count` times.
+@native("snovalang_strings_repeat")
+func repeat(value: string, count: int): string
+
+// Reverses the string by Unicode code points.
+@native("snovalang_strings_reverse")
+func reverse(value: string): string
+
+// ── Padding ────────────────────────────────────────────────────────────────
+
+// Pads the left side of `value` with `char` until the total width is reached.
+@native("snovalang_strings_pad_left")
+func padLeft(value: string, width: int, char: string = " "): string
+
+@native("snovalang_strings_pad_right")
+func padRight(value: string, width: int, char: string = " "): string
+
+// ── Length and access ──────────────────────────────────────────────────────
+
+// Returns the number of Unicode code points (not bytes).
+@native("snovalang_strings_len")
+func len(value: string): int
+
+// Returns the number of UTF-8 bytes in the string.
+@native("snovalang_strings_byte_len")
+func byteLen(value: string): int
+
+@native("snovalang_strings_is_empty")
+func isEmpty(value: string): bool
+
+// Returns the code point at `index` as a single-character string, or None
+// when `index` is out of range.
+@native("snovalang_strings_char_at")
+func charAt(value: string, index: int): Option<string>
+
+// ── Conversion ─────────────────────────────────────────────────────────────
+
+@native("snovalang_strings_parse_int")
+func parseInt(value: string): Result<int, StringError>
+
+@native("snovalang_strings_parse_decimal")
+func parseDecimal(value: string): Result<decimal, StringError>
+
+@native("snovalang_strings_parse_bool")
+func parseBool(value: string): Result<bool, StringError>
+
+@native("snovalang_strings_from_int")
+func fromInt(value: int): string
+
+@native("snovalang_strings_from_decimal")
+func fromDecimal(value: decimal): string
+
+@native("snovalang_strings_from_bool")
+func fromBool(value: bool): string

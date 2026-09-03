@@ -1,0 +1,7 @@
+error[SNOVA100]: variable 'x' has no determinable type; add an explicit type annotation
+ --> tests/compile-fail/untyped_variable.snova:7:9
+  |
+7 |     let x = unknownCall()
+  |         ^ type cannot be inferred from this expression
+  |
+  = help: annotate the variable: `let x: ExpectedType = unknownCall()`

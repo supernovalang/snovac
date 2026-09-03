@@ -1,0 +1,13 @@
+package tests.untyped_variable
+
+// SNOVA100: `let x = someUnknownCall()` — type cannot be inferred.
+// The RHS is not a known literal, constructor, .json<T>(), or HTTP call.
+
+func doSomething(): unit {
+    let x = unknownCall()
+    return
+}
+
+func main(): int {
+    return 0
+}

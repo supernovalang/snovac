@@ -1,0 +1,7 @@
+error[SNOVA026]: Expected a member name after `.`; this member access is incomplete.
+ --> tests/compile-fail/incomplete_member_access.snova:13:46
+   |
+13 |     Console.printline("Todo: " + jsonValue[0].)
+   |                                              ^ expected a member name after `.`
+   |
+   = hint: name the member, e.g. `jsonValue[0].title`

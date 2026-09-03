@@ -1,0 +1,25 @@
+package tests.run_pass.lsp_static_factory_type_inference
+
+
+import builtin.console.Console
+
+
+// Smoke test: `inferExpressionType` (compiler/src/lsp/source_facts.snova) must infer
+// the receiver type of a `let` binding assigned from a static factory call, so member
+// completion works on the result — not just for the bare `Type(...)` constructor form
+// it already handled.
+//
+// Previously the fallback ran `normalizeType` on the whole "Type.method" callee before
+// splitting it. normalizeType collapses everything after the last "." (it exists to
+// strip package qualifiers off fully-qualified type names), so "List<int>.new" lost its
+// ".new" before the (dead) `.endsWith(".new")` check could ever fire — `items.` returned
+// zero member completions as a result. Reproduced live against tools/bin/snovalang-lsp
+// with the exact shape below before the fix, fixed after.
+
+func main(): int {
+    let items = List<int>.new()
+    items.add(1)
+    items.add(2)
+    Console.printline("ok")
+    return 0
+}

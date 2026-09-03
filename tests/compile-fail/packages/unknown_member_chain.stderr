@@ -1,0 +1,1 @@
+error[SNOVA028]: type `EventBus` does not have a method `inexistentFunction`

@@ -1,0 +1,45 @@
+package tests.fields.collision
+
+
+// Regression fixture: two unrelated classes each declare a constructor
+// parameter/field literally named `repository`, with a different declared
+// type each — a common shape in repository-pattern code (ProductRepository,
+// UserRepository, ...). This used to produce a spurious SNOVA028 ("unknown
+// member") on whichever class's field binding lost the race in a single,
+// whole-program-flat variable map with no per-class isolation.
+
+class ProductRepository {
+    method new(): ProductRepository = ProductRepository {}
+    method insertProduct(name: string): unit {
+    }
+}
+
+class UserRepository {
+    method new(): UserRepository = UserRepository {}
+    method insertUser(name: string): unit {
+    }
+}
+
+class ProductUseCases {
+    private let repository: ProductRepository
+
+    method new(repository: ProductRepository): ProductUseCases = ProductUseCases { repository: repository }
+
+    method createProduct(name: string): unit {
+        repository.insertProduct(name)
+    }
+}
+
+class UserUseCases {
+    private let repository: UserRepository
+
+    method new(repository: UserRepository): UserUseCases = UserUseCases { repository: repository }
+
+    method createUser(name: string): unit {
+        repository.insertUser(name)
+    }
+}
+
+func main(): int {
+    return 0
+}

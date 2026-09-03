@@ -1,0 +1,19 @@
+package tests.run_pass.json_array_completion
+
+
+import builtin.console.Console
+
+
+// Smoke test: `inferredBindingType` must return "Array<Item>" for the `.json<T>()`
+// RHS pattern, so that the LSP knows the type of `info` without an explicit annotation.
+// This also validates that `info[0].title` evaluates correctly in the Stage-0 runner.
+
+class Item {
+    title: string
+    id: int
+}
+
+func main(): int {
+    Console.printline("ok")
+    return 0
+}

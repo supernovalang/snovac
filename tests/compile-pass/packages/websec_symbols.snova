@@ -1,0 +1,45 @@
+package tests.packages.websec
+
+
+import builtin.websec.WebSec
+
+
+func main(): int {
+    // JWT claims and signing surface.
+    let claims: JwtClaims = JwtClaims.forSubject("user-1")
+        .withIssuer("snova-api")
+        .withAudience("snova-web")
+        .issuedAtTime(1700000000)
+        .expiresAtTime(1700003600)
+        .withClaim("role", "admin")
+    let payload: string = claims.toJsonString()
+
+    let signed: Result<string, WebSecError> = Jwt.sign(claims, "secret", HS256)
+    let verified: Result<string, WebSecError> = Jwt.verify("a.b.c", "secret", 1700000100)
+    let decoded: Result<string, WebSecError> = Jwt.decodeUnverified("a.b.c")
+
+    // Password policy and hashing facade.
+    let policy: PasswordPolicy = PasswordPolicy.default()
+    let policyCheck: Result<unit, WebSecError> = policy.validate("Sup3rSecret!!")
+
+    // Sessions with injected clock.
+    let sessions: SessionManager = SessionManager.new()
+    let created: AuthSession = sessions.create("user-1", 1700000000, 3600, "sid-1")
+    let validated: Result<AuthSession, WebSecError> = sessions.validate("sid-1", 1700000100)
+    let refreshed: Result<AuthSession, WebSecError> = sessions.refresh("sid-1", 1700000100, 3600)
+    let revoked: bool = sessions.revoke("sid-1")
+    let pruned: int = sessions.prune(1700010000)
+
+    // CSRF and API keys.
+    let csrfToken: string = Csrf.issue("sid-1", "secret", "nonce")
+    let csrfCheck: Result<unit, WebSecError> = Csrf.verify(csrfToken, "sid-1", "secret")
+    let apiKey: string = ApiKey.generate("sk")
+    let stored: string = ApiKey.hashForStorage(apiKey)
+    let keyOk: bool = ApiKey.verify(apiKey, stored)
+
+    // Header parsing and constant-time comparison.
+    let bearer: Option<string> = parseBearer("Bearer abc123")
+    let same: bool = constantTimeEquals("abc", "abc")
+
+    return 0
+}

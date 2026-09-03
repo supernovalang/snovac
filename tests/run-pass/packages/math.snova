@@ -1,0 +1,13 @@
+package tests.packages.math
+
+
+import builtin.console.Console
+import builtin.math.Math
+
+
+func main(): int {
+    Console.printline(Math.min(3, 8))
+    Console.printline(Math.max(3, 8))
+    Console.printline(Math.abs(-7))
+    return 0
+}

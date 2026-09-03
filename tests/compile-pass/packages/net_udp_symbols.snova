@@ -1,0 +1,12 @@
+package tests.packages.net_udp_symbols
+
+
+import builtin.net.Net
+import builtin.console.Console
+
+
+async func main(): Task<int> {
+    let addresses = await Net.resolve("example.com")
+    let bound = await UdpSocket.bind("0.0.0.0:9000")
+    return 0
+}

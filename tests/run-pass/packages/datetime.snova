@@ -1,0 +1,11 @@
+package tests.packages.datetime
+
+
+import builtin.console.Console
+
+
+func main(): int {
+    Console.printline("Instant")
+    let instant = now()
+    return 0
+}

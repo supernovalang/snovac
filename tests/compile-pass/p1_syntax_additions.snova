@@ -1,0 +1,84 @@
+package tests.p1_syntax_additions
+
+// Fixture locking the grammar decisions closed with the P1 syntactic gate
+// (specs/20260719/snovac-c-toolchain). Each section is one construction that
+// the corpus uses and the parser must accept.
+
+// enum supertype: `enum E : Base { ... }`
+enum SizeError : Error {
+    TooSmall,
+    TooBig
+}
+
+// `extends` as textual supertype keyword
+class Animal {
+    method speak(): string {
+        return "..."
+    }
+}
+
+class Dog extends Animal {
+    override method speak(): string {
+        return "woof"
+    }
+}
+
+// constructor member
+class Sample {
+    let description: string
+
+    public constructor(description: string) {
+        this.description = description
+    }
+}
+
+// tuple type inside generics
+class Pairs<K, V> {
+    method min(): Option<(K, V)> {
+        return Option.None
+    }
+}
+
+// extension declaration with expression-bodied members
+extension Dog {
+    func isNoisy(): bool = true
+}
+
+struct UserDto {
+    id: string
+    email: string
+}
+
+func build(): UserDto {
+    // struct literal in call and return position
+    return UserDto { id: "1", email: "a@b.com" }
+}
+
+func classify(code: int): string {
+    // negative literal pattern after a previous arm: the newline ends the
+    // first arm's body, it is not a `1 - 1` continuation
+    match code {
+        0 -> return "zero"
+        -1 -> return "minus one"
+        c if c > 0 -> return "positive"
+        _ -> return "negative"
+    }
+}
+
+func pick(flag: bool): int {
+    // `if` in expression position, with else-if chain
+    let base = if flag { 7 } else if !flag { 6 } else { 0 }
+    return base
+}
+
+func guarded(input: string): string {
+    try {
+        let value = parseInt(input)?
+        // postfix `?` above must not swallow this `return` as a ternary branch
+        return value.toString()
+    } catch (err: ParseError) {
+        return "error"
+    } finally {
+        cleanup()
+    }
+}

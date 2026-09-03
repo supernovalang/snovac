@@ -1,0 +1,12 @@
+package tests.packages.console
+
+
+import builtin.console.Console
+
+
+func main(): int {
+    Console.printline("stdout")
+    Console.err("stderr")
+    Console.warn("careful")
+    return 0
+}

@@ -1,0 +1,17 @@
+package tests.packages.decorators
+
+
+import builtin.json.Json
+
+
+@json
+struct DiagnosticDto {
+    @jsonField("code")
+    public let code: string
+    @jsonField("message")
+    public let message: string
+}
+
+func main(): int {
+    return 0
+}

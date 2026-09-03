@@ -1,0 +1,17 @@
+package tests.packages.testing_native_symbols
+
+
+import builtin.testing.Testing
+import builtin.console.Console
+
+
+func main(): int {
+    let sw = Stopwatch.start()
+    let r = Assert.equal(2 + 2, 4, "math still works")
+    let rep = Testing.report("arithmetic", 1, 0, 0)
+    Testing.publish(rep)
+    let nanos = Testing.nowNanos()
+    let elapsed = sw.elapsedMillis()
+    let again = sw.restart()
+    return 0
+}

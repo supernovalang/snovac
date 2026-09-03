@@ -1,0 +1,51 @@
+package tests.property_accessors
+
+// Fixture locking the property-accessor grammar
+// (specs/20260719/property-accessors). A field may carry a `{ get; set; }`
+// block; the accessors it omits are the ones the outside world cannot use.
+
+class Account {
+    // Both channels open. The field stays `private`, so direct access from
+    // outside is still refused — the accessors are the only way in.
+    private let email: string { get; set; }
+
+    // Read-only from outside: no `set`, so `account.id = ...` is an error.
+    private let id: string { get; }
+
+    // Write-only: no `get`, so reading `account.token` from outside is an error.
+    private var token: string = "" { set; }
+
+    // Sealed on purpose. An empty block is not the same as no block: it closes
+    // both channels explicitly.
+    private let salt: string { }
+
+    // No block at all — the plain visibility rules apply, unchanged.
+    private let attempts: int = 0
+
+    method describe(): string {
+        // Inside the declaring type the raw field is what is seen, projections
+        // and all. `email` here is the stored value, never a projection.
+        return id + ":" + email
+    }
+}
+
+class Masked {
+    // The projection parameter names the field locally. The name is arbitrary:
+    // the field is `password`, the projection calls it `x`.
+    private let password: string { get: (x) -> "*******"; set; }
+
+    // A `set` projection transforms the incoming value before it is stored.
+    private var handle: string = "" { get; set: (v) -> v.trim(); }
+
+    // Both sides projected, and the projection may be any expression.
+    private var score: int = 0 {
+        get: (s) -> s * 10;
+        set: (s) -> s + 1;
+    }
+}
+
+data class Row {
+    // The bare-field form of a `data class` takes the same block.
+    id: string { get; }
+    name: string = "anon" { get; set; }
+}

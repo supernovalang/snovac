@@ -1,0 +1,9 @@
+package tests.pulsar_mutable_capture
+
+func main(): int {
+    var counter = 0
+    pulsar {
+        counter = counter + 1
+    }
+    return 0
+}

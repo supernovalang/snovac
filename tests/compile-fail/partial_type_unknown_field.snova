@@ -1,0 +1,21 @@
+package tests.bad
+
+import builtin.console.Console
+
+// error[SNOVA028]: `Partial<User>`'s field surface is exactly `User`'s field
+// surface — `User` has no `email` field, so `.email` is not a valid member of
+// `Partial<User>` either. This must be caught at compile time, not silently
+// accepted because the checker doesn't recognize `Partial<...>` — the whole
+// point of synthesizing the type is that it stays as type-safe as the struct
+// it wraps.
+
+struct User {
+    name: string
+    age: int
+}
+
+func main(): int {
+    let user = Partial<User>(name: "Ada", age: 36)
+    Console.printline(user.email)
+    return 0
+}

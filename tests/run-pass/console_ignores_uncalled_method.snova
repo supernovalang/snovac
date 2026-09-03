@@ -1,0 +1,16 @@
+package tests.run_pass.console_ignores_uncalled_method
+
+
+import builtin.console.Console
+
+
+class Logger {
+    public method info(message: string): unit {
+        Console.printline(message)
+    }
+}
+
+func main(): int {
+    Console.printline("main-ok")
+    return 0
+}

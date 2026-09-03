@@ -1,0 +1,24 @@
+package tests.bad
+
+import builtin.http.Http
+
+// error[SNOVA025]: the generic argument to `.json<...>()` is never closed.
+// `.json<Array<Post>()` is missing the outer `>`, so the `<` opened by `json<`
+// is still unbalanced when the call's `(` is reached. The Stage-0 runner would
+// otherwise parse a garbage element type instead of reporting the typo.
+
+data class Post {
+    let id: int
+
+    constructor(id: int) {
+        this.id = id
+    }
+}
+
+async func main(): Task<int> {
+    let response = await Http.get("http://example.com/todos")
+    for (let todo in response.json<Array<Post>()) {
+        return todo.id
+    }
+    return 0
+}

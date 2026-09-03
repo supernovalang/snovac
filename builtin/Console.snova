@@ -1,0 +1,62 @@
+package builtin.console.Console
+
+
+// Errors arising from console I/O operations.
+enum ConsoleError {
+    BrokenPipe,
+    InvalidUtf8,
+    Interrupted,
+    ParseError(message: string),
+}
+
+// Key values returned by getkey(). Covers printable characters, control keys,
+// arrow keys and function keys.
+enum Key {
+    Char(char: string),
+    Enter,
+    Backspace,
+    Delete,
+    Tab,
+    Escape,
+    Up,
+    Down,
+    Left,
+    Right,
+    F(n: int),
+    Ctrl(key: string),
+    Alt(key: string),
+    Unknown(code: int),
+}
+
+// Writes `value` to stdout without a trailing newline.
+// The concrete type of `value` must implement Display (asString).
+@native("snovalang_console_print")
+func print(value: any): Result<unit, ConsoleError>
+
+// Writes `value` to stdout followed by a newline.
+@native("snovalang_console_printline")
+func printline(value: any): Result<unit, ConsoleError>
+
+// Writes `value` to stderr without a trailing newline.
+@native("snovalang_console_err")
+func err(value: any): Result<unit, ConsoleError>
+
+// Writes `value` to stderr with a [warn] prefix and timestamp.
+// Can be suppressed with SNOVA_NOWARN=1.
+@native("snovalang_console_warn")
+func warn(value: any): Result<unit, ConsoleError>
+
+// Reads a line from stdin. Parks the current task — does not block the carrier thread.
+// The optional `prompt` is written to stdout before reading.
+@native("snovalang_console_getline")
+func getline(prompt: string = ""): Task<Result<string, ConsoleError>>
+
+// Reads a line from stdin and parses it as an integer.
+// Returns Err(ConsoleError.ParseError) when the input is not a valid integer.
+@native("snovalang_console_getint")
+func getint(prompt: string = ""): Task<Result<int, ConsoleError>>
+
+// Reads a single keypress without requiring Enter.
+// Switches the terminal to raw mode and restores canonical mode after reading.
+@native("snovalang_console_getkey")
+func getkey(): Task<Result<Key, ConsoleError>>

@@ -1,0 +1,32 @@
+package tests.packages.run_pass_builtin_prelude_no_import
+
+import builtin.console.Console
+
+// Proves `Duration`/`Instant` (builtin.datetime.DateTime) and `Option`/`Result`
+// (builtin.types.Types) actually run — not just type-check — with zero
+// import for any of them. `Console` is imported only to print output; it is
+// unrelated to the builtin prelude under test.
+
+func main(): int {
+    let ttl = Duration.seconds(5)
+    if ttl.toSeconds() == 5 {
+        Console.printline("duration ok")
+    }
+
+    let instant = now()
+    if instant.seconds() >= 0 {
+        Console.printline("instant ok")
+    }
+
+    let found: Option<int> = Some(7)
+    if found.isSome() {
+        Console.printline("option ok")
+    }
+
+    let parsed: Result<int, string> = Ok(42)
+    if parsed.isOk() {
+        Console.printline("result ok")
+    }
+
+    return 0
+}

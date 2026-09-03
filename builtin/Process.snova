@@ -1,0 +1,146 @@
+package builtin.process.Process
+
+
+import builtin.collections.Collections
+
+import builtin.errors.Errors
+
+
+// ── ProcessResult ─────────────────────────────────────────────────────────────
+
+// Result of a completed subprocess invocation.
+struct ProcessResult {
+    public let exitCode: int
+    public let stdout: string
+    public let stderr: string
+
+    method success(): bool {
+        return exitCode == 0
+    }
+}
+
+// ── ProcessBuilder ────────────────────────────────────────────────────────────
+
+// Builds and spawns a child process. Mirrors Go's `exec.Cmd` and Rust's
+// `std::process::Command` — configure first, then call `run()` or `spawn()`.
+class ProcessBuilder {
+    private var program: string
+    private var arguments: List<string>
+    private var envVars: Map<string, string>
+    private var workingDir: string
+    private var inheritEnv: bool
+
+    static method new(program: string): ProcessBuilder {
+        return ProcessBuilder(program, List.new(), Map.new(), "", true)
+    }
+
+    // Appends a single argument.
+    method arg(value: string): ProcessBuilder {
+        arguments.add(value)
+        return self
+    }
+
+    // Appends multiple arguments.
+    method args(values: Array<string>): ProcessBuilder {
+        for v in values {
+            arguments.add(v)
+        }
+        return self
+    }
+
+    // Sets an environment variable for the child process.
+    method env(key: string, value: string): ProcessBuilder {
+        envVars.set(key, value)
+        return self
+    }
+
+    // Sets the working directory for the child process.
+    method dir(path: string): ProcessBuilder {
+        workingDir = path
+        return self
+    }
+
+    // When false, the child inherits no environment variables from the parent.
+    method clearEnv(): ProcessBuilder {
+        inheritEnv = false
+        return self
+    }
+
+    // Runs the process to completion and captures stdout and stderr.
+    // Blocks the current task until the process exits.
+    @native("snovalang_process_run")
+    method run(): Result<ProcessResult, ProcessError>
+
+    // Spawns the process and returns a handle without waiting.
+    @native("snovalang_process_spawn")
+    method spawn(): Result<ChildProcess, ProcessError>
+
+    // Runs the process and returns only the exit code (stdout/stderr inherited).
+    @native("snovalang_process_exec")
+    method exec(): Result<int, ProcessError>
+}
+
+// ── ChildProcess ──────────────────────────────────────────────────────────────
+
+// Handle to a running subprocess. Created by `ProcessBuilder.spawn()`.
+class ChildProcess {
+    // Process identifier of the child.
+    @native("snovalang_child_pid")
+    method pid(): int
+
+    // Waits for the process to exit and returns its result.
+    @native("snovalang_child_wait")
+    method wait(): Result<ProcessResult, ProcessError>
+
+    // Sends SIGTERM (or TerminateProcess on Windows) to the child.
+    @native("snovalang_child_kill")
+    method kill(): Result<unit, ProcessError>
+
+    // Writes bytes to the child's stdin.
+    @native("snovalang_child_write_stdin")
+    method writeStdin(data: string): Result<unit, ProcessError>
+
+    // Checks if the process has exited without blocking.
+    @native("snovalang_child_try_wait")
+    method tryWait(): Option<ProcessResult>
+}
+
+// ── ProcessError ──────────────────────────────────────────────────────────────
+
+enum ProcessError {
+    NotFound(program: string),
+    PermissionDenied,
+    IoError(message: string),
+    Timeout,
+}
+
+// ── Current process ───────────────────────────────────────────────────────────
+
+// Returns the value of an environment variable, or None when unset.
+@native("snovalang_env_get")
+func env(key: string): Option<string>
+
+// Returns all environment variables as a map.
+@native("snovalang_env_all")
+func envAll(): Map<string, string>
+
+// Sets an environment variable in the current process.
+@native("snovalang_env_set")
+func setEnv(key: string, value: string): unit
+
+// Removes an environment variable from the current process.
+@native("snovalang_env_unset")
+func unsetEnv(key: string): unit
+
+// Returns the path of the current executable.
+@native("snovalang_process_executable")
+func executable(): string
+
+// Returns the process identifier of the current process.
+@native("snovalang_process_pid")
+func pid(): int
+
+// Terminates the current process with `code` as the exit status.
+// This function never returns.
+@native("snovalang_process_exit")
+func exit(code: int): never

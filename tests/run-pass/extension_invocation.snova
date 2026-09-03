@@ -1,0 +1,32 @@
+package tests.extension_invocation
+
+import builtin.console.Console
+
+class Counter {
+    private var value: Int
+
+    method increment(): Int {
+        value += 1
+        return value
+    }
+}
+
+extension Counter {
+    func status(): String {
+        if value == 0 {
+            return "zero"
+        }
+        return "nonzero"
+    }
+}
+
+public extension Counter.label(): String = "counter-extension"
+
+func main(): Int {
+    let c = Counter(0)
+    Console.printline(c.status())
+    c.increment()
+    Console.printline(c.status())
+    Console.printline(c.label())
+    return 0
+}

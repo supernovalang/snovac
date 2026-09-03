@@ -1,0 +1,170 @@
+package builtin.os.OS
+
+
+import builtin.collections.Collections
+
+
+// ── Platform and architecture detection ──────────────────────────────────────
+
+// Operating system of the current host.
+enum Platform {
+    Linux
+    MacOs
+    Windows
+    FreeBsd
+    OpenBsd
+    NetBsd
+    Unknown
+}
+
+// CPU architecture of the current host.
+enum Arch {
+    X86_64
+    Arm64
+    X86
+    Arm
+    Wasm32
+    Riscv64
+    Unknown
+}
+
+// ABI/executable format convention of the current host.
+enum ExeFormat {
+    Elf        // Linux, FreeBSD, OpenBSD
+    MachO      // macOS, iOS
+    Pe         // Windows
+    Wasm       // WebAssembly
+    Unknown
+}
+
+// Returns the operating system of the current host.
+@native("snovalang_os_platform")
+func platform(): Platform
+
+// Returns the CPU architecture of the current host.
+@native("snovalang_os_arch")
+func arch(): Arch
+
+// Returns the executable format convention of the current host.
+@native("snovalang_os_exe_format")
+func exeFormat(): ExeFormat
+
+// Returns the default file extension for executables on the current platform.
+// Returns "" on Unix, ".exe" on Windows.
+func exeExtension(): string {
+    if platform() == Platform.Windows {
+        return ".exe"
+    }
+    return ""
+}
+
+// Returns the default shared library extension on the current platform.
+// ".so" on Linux, ".dylib" on macOS, ".dll" on Windows.
+func sharedLibExtension(): string {
+    match platform() {
+        Platform.Linux   -> return ".so"
+        Platform.MacOs   -> return ".dylib"
+        Platform.Windows -> return ".dll"
+        _                -> return ".so"
+    }
+}
+
+// Returns the path separator character for the current platform.
+// '/' on Unix, '\\' on Windows.
+func pathSeparator(): string {
+    if platform() == Platform.Windows {
+        return "\\"
+    }
+    return "/"
+}
+
+// ── Environment variables ─────────────────────────────────────────────────────
+
+// Returns the value of an environment variable, or None when unset.
+@native("snovalang_os_env_get")
+func env(key: string): Option<string>
+
+// Returns all environment variables as a map.
+@native("snovalang_os_env_all")
+func envAll(): Map<string, string>
+
+// Sets an environment variable in the current process.
+@native("snovalang_os_env_set")
+func setEnv(key: string, value: string): unit
+
+// Removes an environment variable from the current process.
+@native("snovalang_os_env_unset")
+func unsetEnv(key: string): unit
+
+// ── Process identity ─────────────────────────────────────────────────────────
+
+// Returns the process identifier of the current process.
+@native("snovalang_os_pid")
+func pid(): int
+
+// Returns the process identifier of the parent process.
+@native("snovalang_os_ppid")
+func ppid(): int
+
+// Returns the hostname of the machine, or None when unavailable.
+@native("snovalang_os_hostname")
+func hostname(): Option<string>
+
+// Returns the login name of the user running this process, or None.
+@native("snovalang_os_username")
+func username(): Option<string>
+
+// ── Standard directory paths ──────────────────────────────────────────────────
+
+// Returns the user's home directory path, or None when undetermined.
+@native("snovalang_os_home_dir")
+func homeDir(): Option<string>
+
+// Returns the platform temp directory (e.g., /tmp on Unix, %TEMP% on Windows).
+@native("snovalang_os_temp_dir")
+func tempDir(): string
+
+// Returns the current working directory.
+@native("snovalang_os_cwd")
+func cwd(): string
+
+// Changes the current working directory to `path`.
+@native("snovalang_os_chdir")
+func chdir(path: string): Result<unit, OsError>
+
+// ── Process control ───────────────────────────────────────────────────────────
+
+// Terminates the current process with `code` as the exit status.
+// Never returns. An exit code of 0 signals success; non-zero signals failure.
+@native("snovalang_os_exit")
+func exit(code: int): never
+
+// Aborts the process immediately with a non-zero status, bypassing cleanup.
+// Use only in unrecoverable situations.
+@native("snovalang_os_abort")
+func abort(): never
+
+// ── CPU and memory info ───────────────────────────────────────────────────────
+
+// Returns the number of logical CPU cores available to the process.
+// Respects cgroup/container limits when available.
+@native("snovalang_os_cpu_count")
+func cpuCount(): int
+
+// Returns the total physical RAM in bytes, or None when unavailable.
+@native("snovalang_os_total_memory")
+func totalMemory(): Option<long>
+
+// Returns the amount of memory currently used by this process in bytes.
+@native("snovalang_os_process_memory")
+func processMemory(): Option<long>
+
+// ── OsError ───────────────────────────────────────────────────────────────────
+
+enum OsError {
+    NotFound(path: string),
+    PermissionDenied(path: string),
+    IoError(code: int, message: string),
+    Unsupported(feature: string),
+    Unknown(message: string),
+}

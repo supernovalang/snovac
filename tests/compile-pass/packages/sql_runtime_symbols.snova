@@ -1,0 +1,66 @@
+package tests.packages.sql_runtime
+
+
+import builtin.sql.Sql
+
+
+func main(): int {
+    // Builders generate real, dialect-aware SQL with bound parameters.
+    let users = TableRef("", "users", "u")
+
+    let pg: SqlBuilder = SqlBuilder(Postgres)
+    let selectQuery: GeneratedQuery<any> = pg.select()
+        .columns(["id", "email"])
+        .from(users)
+        .where(Cond.eq("email", TextValue("a@b.c")))
+        .orderBy("id", Desc)
+        .limit(10)
+        .build()
+
+    let insertQuery: GeneratedQuery<any> = pg.insertInto(users)
+        .value("email", TextValue("a@b.c"))
+        .value("age", IntValue(30))
+        .buildReturning(["id"])
+
+    let updateQuery: GeneratedQuery<any> = pg.update(users)
+        .set("email", TextValue("new@b.c"))
+        .where(Cond.eq("id", IntValue(1)))
+        .build()
+
+    let deleteQuery: GeneratedQuery<any> = pg.deleteFrom(users)
+        .where(Cond.inValues("id", [IntValue(1), IntValue(2)]))
+        .build()
+
+    // Condition combinators.
+    let cond: SqlFragment = Cond.and(Cond.gte("age", IntValue(18)), Cond.isNotNull("email"))
+    let ranged: SqlFragment = Cond.between("age", IntValue(18), IntValue(65))
+
+    // Execution layer: in-memory connection, session, transaction.
+    let connection: MemorySqlConnection = MemorySqlConnection.new()
+    let session: SqlSession = SqlSession.open(connection, Postgres)
+    let executed: Result<SqlResultSet, SqlError> = session.execute(insertQuery)
+    let queried: Result<GeneratedQueryResult<any>, SqlError> = session.query(selectQuery)
+    let rawQueried: Result<SqlResultSet, SqlError> = session.queryRaw(selectQuery)
+
+    let txResult: Result<Transaction, SqlError> = session.begin(Serializable)
+
+    // Result-set shapes.
+    let row: SqlRow = SqlRow(["version"], [IntValue(3)])
+    let resultSet: SqlResultSet = SqlResultSet([row], 1)
+
+    // Migrations.
+    let scripts = [
+        MigrationScript(1, "create users", "CREATE TABLE users (id INT)", "DROP TABLE users"),
+        MigrationScript(2, "add email", "ALTER TABLE users ADD email TEXT", "ALTER TABLE users DROP COLUMN email"),
+    ]
+    let runner: MigrationRunner = MigrationRunner.new(scripts)
+    let planned: Array<MigrationScript> = runner.pending(0)
+    let upResult: Result<int, SqlError> = runner.migrateUp(session, "2026-07-03T00:00:00Z")
+
+    // Debug helpers.
+    let rendered: string = renderSqlValue(TextValue("x"))
+    let spec: SqlDialectSpec = SqlDialectSpec.forDialect(MsSql)
+    let restyled: string = applyPlaceholderStyle("SELECT * FROM t WHERE a = ? AND b = ?", spec)
+
+    return 0
+}

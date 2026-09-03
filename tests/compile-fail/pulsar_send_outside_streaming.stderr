@@ -1,0 +1,1 @@
+error[SNOVA128]: `return Channel.send(...)` is only valid inside a streaming pulsar.

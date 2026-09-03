@@ -1,0 +1,32 @@
+package tests.packages.builtin_prelude_no_import
+
+// Proves the builtin prelude (Collections/DateTime/Types, folded in
+// unconditionally by `Resolver::include_builtin_prelude`) resolves with
+// zero `import` statements — no `import builtin.collections.Collections`,
+// `import builtin.datetime.DateTime`, or anything naming `Option`/`Result`
+// appears anywhere in this file. See
+// specs/20260711/builtin-prelude-types/llm.md.
+
+struct Registers {
+    items: List<int>
+    lookup: Map<string, int>
+    tags: Set<string>
+    pending: Queue<string>
+    history: Stack<string>
+    order: LinkedList<int>
+    schedule: PriorityQueue<string>
+    index: Tree<string, int>
+    createdAt: Instant
+    ttl: Duration
+    expiresOn: LocalDate
+    startedAt: LocalDateTime
+    zone: TimeZone
+    formatter: DateTimeFormatter
+    parseError: Option<DateTimeError>
+    found: Option<int>
+    parsed: Result<int, string>
+}
+
+func main(): int {
+    return 0
+}

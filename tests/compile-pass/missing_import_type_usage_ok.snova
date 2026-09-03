@@ -1,0 +1,17 @@
+package tests.missing_import_type_usage_ok
+
+
+import builtin.http.Http
+
+
+// Counterpart to tests/compile-fail-pending/missing_import_type_usage.snova:
+// same reference to `HttpRequest`, but with the required import present, so
+// SNOVA121 must not fire.
+
+func handle(req: HttpRequest): unit {
+    return
+}
+
+func main(): int {
+    return 0
+}

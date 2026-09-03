@@ -1,0 +1,36 @@
+package tests.packages.testing
+
+import builtin.testing.Testing
+
+struct TestResult {
+    func isFailed(): bool { return false }
+}
+struct Assert {
+    static method isTrue(a: bool, b: string): TestResult { return TestResult() }
+    static method equal(a: int, b: int, c: string): TestResult { return TestResult() }
+    static method notNull(a: any, b: string): TestResult { return TestResult() }
+}
+struct TestSuite {
+    let a: string
+    let b: int
+}
+func report(a: string, b: int, c: int, d: int): any {}
+
+@suite("stdlib")
+struct TestingSymbols {
+    @test
+    static method assertions_are_available(): TestResult {
+        let ok = Assert.isTrue(true, "true should pass")
+        if ok.isFailed() {
+            return ok
+        }
+        return Assert.equal(1, 1, "numbers should match")
+    }
+}
+
+func main(): int {
+    let suite = TestSuite("stdlib", 1)
+    let result = Assert.notNull<string>("snova", "value should be present")
+    let summary = report("stdlib", 1, 0, 0)
+    return 0
+}

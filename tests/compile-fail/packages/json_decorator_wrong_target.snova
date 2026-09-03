@@ -1,0 +1,6 @@
+package tests.packages.faildecorator
+
+@json
+func main(): int {
+    return 0
+}

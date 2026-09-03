@@ -1,0 +1,7 @@
+error[SNOVA094]: `helperOnly` is `internal` to package `tests.visibility.provider` and cannot be accessed from package `tests.visibility.consumer`.
+ --> tests/compile-fail/visibility_internal_cross_package.snova:10:12
+   |
+10 |     return helperOnly()
+   |            ^^^^^^^^^^ `helperOnly` is internal to its declaring package
+   |
+   = hint: mark `helperOnly` `public` in package `tests.visibility.provider` if it is meant to be used from other packages

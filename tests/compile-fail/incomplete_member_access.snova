@@ -1,0 +1,15 @@
+package tests.bad
+
+import builtin.console.Console
+
+// error[SNOVA026]: a `.` member access must be followed by a member name.
+// `jsonValue[0].` closes the expression (here with `)`) right after the dot, so
+// the access is incomplete. It must be reported at compile time — surfacing in
+// the editor on save via `snova check` — instead of only failing later inside
+// the Stage-0 runner.
+
+func main(): int {
+    let jsonValue = "x"
+    Console.printline("Todo: " + jsonValue[0].)
+    return 0
+}

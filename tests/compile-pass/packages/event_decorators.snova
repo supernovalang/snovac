@@ -1,0 +1,34 @@
+package tests.packages.events
+
+
+import builtin.events.Events
+import builtin.json.Json
+import builtin.console.Console
+import builtin.async.Async
+
+
+@Json
+data class GreetingPayload {
+    @JsonField("message")
+    public let message: string
+
+    constructor(message: string) {
+        this.message = message
+    }
+}
+
+class Greeter {
+    @EventAwait("greeting")
+    async method onGreeting(payload: GreetingPayload): Task<unit> {
+        Console.printline("Received greeting: " + payload.message)
+        return Task.completed(unit)
+    }
+}
+
+async func main(): Task<int> {
+    let bus = EventBus.new()
+        .mountDecorated(Greeter())
+        .addMountDecorated(Greeter())
+    let sent = event.send("greeting", GreetingPayload("Hello events!"))
+    return Task.completed(0)
+}

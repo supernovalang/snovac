@@ -53,29 +53,41 @@ assert "softkw: and is identifier" 1 \
 
 # Property accessors: the absence of an accessor is the whole point of the
 # feature, so assert that omitted ones stay omitted and are not defaulted in.
-PROPS="$DIR/../../tests/compile-pass/property_accessors.snova"
-props() { "$SNOVAC" --emit=ast "$PROPS"; }
-assert "props: parses clean" 0 "$(props >/dev/null 2>&1; echo $?)"
-assert "props: read-only field has get and no set" 1 \
-  "$(props | grep -c 'private let id: string { get }')"
-assert "props: write-only field has set and no get" 1 \
-  "$(props | grep -c 'var token: string { set }')"
-assert "props: empty block is not both accessors" 1 \
-  "$(props | grep -c 'let salt: string { }')"
-assert "props: no block stays a plain field" 1 \
-  "$(props | grep -c 'let attempts: int$')"
-assert "props: projections recorded on both sides" 1 \
-  "$(props | grep -c 'var score: int { get: (\.\.\.) set: (\.\.\.) }')"
+PROPS="$DIR/compile-pass/property_accessors.snova"
+[ -f "$PROPS" ] || PROPS="$DIR/../../tests/compile-pass/property_accessors.snova"
+if [ -f "$PROPS" ]; then
+  props() { "$SNOVAC" --emit=ast "$PROPS"; }
+  assert "props: parses clean" 0 "$(props >/dev/null 2>&1; echo $?)"
+  assert "props: read-only field has get and no set" 1 \
+    "$(props | grep -c 'private let id: string { get }')"
+  assert "props: write-only field has set and no get" 1 \
+    "$(props | grep -c 'var token: string { set }')"
+  assert "props: empty block is not both accessors" 1 \
+    "$(props | grep -c 'let salt: string { }')"
+  assert "props: no block stays a plain field" 1 \
+    "$(props | grep -c 'let attempts: int$')"
+  assert "props: projections recorded on both sides" 1 \
+    "$(props | grep -c 'var score: int { get: (\.\.\.) set: (\.\.\.) }')"
+fi
 
 # End-to-end execution against the repository's own run-pass fixtures. These
 # assert real program output, not parser shape.
-RP="$DIR/../../tests/run-pass"
+RP="$DIR/run-pass"
+[ -d "$RP" ] || RP="$DIR/../../tests/run-pass"
 for name in hello string_comment_url array_field_access counter extension_invocation; do
   if [ -f "$RP/$name.snova" ] && [ -f "$RP/$name.stdout" ]; then
     got="$("$SNOVAC" run "$RP/$name.snova" 2>&1 || true)"
     assert "run: $name" "$(cat "$RP/$name.stdout")" "$got"
   fi
 done
+
+if [ -z "${SNOVA_BUILTIN_DIR:-}" ]; then
+  if [ -d "$DIR/../builtin" ]; then
+    export SNOVA_BUILTIN_DIR="$DIR/../builtin"
+  elif [ -d "$DIR/../../builtin" ]; then
+    export SNOVA_BUILTIN_DIR="$DIR/../../builtin"
+  fi
+fi
 
 # Project-wide analysis: the regression that motivated it was a syntax error
 # in a NON-entry file passing every gate and the program running anyway,

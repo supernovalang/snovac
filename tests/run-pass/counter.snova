@@ -1,0 +1,19 @@
+package tests.counter
+
+
+import builtin.console.Console
+
+
+class Counter {
+    private var value: int
+
+    method increment(): unit { value += 1 }
+    method get(): int = value
+    method asString(): string = "counter"
+}
+
+func main(): int {
+    let c = Counter()
+    Console.printline(c)
+    return 0
+}

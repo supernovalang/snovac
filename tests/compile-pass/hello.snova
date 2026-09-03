@@ -1,0 +1,10 @@
+package tests.hello
+
+
+import builtin.console.Console
+
+
+func main(): Int {
+    Console.printline("Hello, Snovalang!")
+    return 0
+}

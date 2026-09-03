@@ -1,0 +1,9 @@
+package tests.bad
+
+// error: `method` is only valid inside a class or struct body.
+// Use `func` for top-level functions.
+method badTopLevel(): Int {
+    return 0
+}
+
+func main(): Int = 0

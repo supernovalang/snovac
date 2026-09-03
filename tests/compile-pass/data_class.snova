@@ -1,0 +1,25 @@
+package tests.data_class
+
+
+data class Point {
+    public let x: Float
+    public let y: Float
+}
+
+data class Rect {
+    public let origin: Point
+    public let width: Float
+    public let height: Float
+
+    method area(): Float = width * height
+    method contains(p: Point): Bool {
+        return p.x >= origin.x && p.x <= origin.x + width
+            && p.y >= origin.y && p.y <= origin.y + height
+    }
+}
+
+func main(): Int {
+    let r = Rect(Point(0.0, 0.0), 10.0, 5.0)
+    let a = r.area()
+    return 0
+}

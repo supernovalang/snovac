@@ -1,0 +1,2 @@
+error[SNOVA031]: `method` is not valid at the top level — use `func` for module-level functions.
+warning[SNOVA000]: Prefer `int` over `Int` in native Snovalang.

@@ -1,0 +1,9 @@
+package tests.pulsar_receive_missing_rhs
+
+pulsar func worker(): unit {
+    let v <~
+}
+
+func main(): int {
+    return 0
+}

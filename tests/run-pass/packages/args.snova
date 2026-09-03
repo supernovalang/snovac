@@ -1,0 +1,11 @@
+package tests.packages.args
+
+
+import builtin.args.Args
+import builtin.console.Console
+
+
+func main(args: Array<string>): int {
+    Console.printline(Args.count())
+    return 0
+}

@@ -1,0 +1,16 @@
+package tests.packages.sync_symbols
+
+
+import builtin.sync.Sync
+import builtin.async.Async
+
+
+async func main(): Task<int> {
+    let m = Mutex.new(0)
+    let wg = WaitGroup.new()
+    let sem = Semaphore.new(3)
+    let once = Once.new()
+    let counter = m.peek()
+    wg.add(1)
+    return 0
+}

@@ -1,0 +1,24 @@
+package test.syntax.only
+
+
+// This file must compile without importing any domain http package.
+// @GetRequest etc must NOT be provided by builtin.syntax.Syntax anymore.
+
+import builtin.runtimehost.RuntimeHost   // core only
+
+
+@json
+struct Demo {
+    public let x: int
+}
+
+@test
+func demoTest(): unit { }
+
+pulsar func bg() { }
+
+func main(): int {
+    // Using RuntimeHost from core is fine.
+    let _: any = getDefault()
+    return 0
+}

@@ -1,0 +1,26 @@
+package tests.packages.functional_symbols
+
+
+import builtin.functional.Functional
+import builtin.parallel.Parallel
+import builtin.console.Console
+
+
+async func main(): Task<int> {
+    let values = [1, 2, 3]
+
+    let labels = values.map((n) -> n.toString())
+    labels.forEach((label) -> Console.printline(label))
+
+    let evens = values.filter((n) -> n > 1)
+    let total = values.reduce(0, (acc, n) -> acc + n)
+    let first = values.first()
+    let last = values.last()
+
+    let concurrent = await values.concurrentMapping((n) -> n.toString())
+    await values.concurrentForEach((n) -> Console.printline(n.toString()))
+    let parallel = await Parallel.concurrentMapping(values, (n) -> n.toString())
+    await Parallel.concurrentForEach(values, (n) -> Console.printline(n.toString()))
+
+    return 0
+}

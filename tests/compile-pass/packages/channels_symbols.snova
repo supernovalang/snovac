@@ -1,0 +1,14 @@
+package tests.packages.channels_symbols
+
+
+import builtin.channels.Channels
+import builtin.async.Async
+
+
+async func main(): Task<int> {
+    let ch = Channels.makeChannel<string>(0)
+    let bch = Channels.makeChannel<int>(16)
+    let closed = ch.isClosed()
+    let cap = bch.capacity()
+    return 0
+}

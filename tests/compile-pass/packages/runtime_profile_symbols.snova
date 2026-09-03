@@ -1,0 +1,31 @@
+package tests.compile_pass.packages.runtime_profile_symbols
+
+import builtin.runtime.Runtime
+
+func main(): int {
+    let minimal = RuntimeConfig.forProfile(RuntimeProfile.Minimal)
+    if minimal.profile != RuntimeProfile.Minimal {
+        return 1
+    }
+    if minimal.features.isEnabled("http") {
+        return 2
+    }
+
+    let api = RuntimeConfig.forProfile(RuntimeProfile.Api)
+    if !api.features.isEnabled("http") {
+        return 3
+    }
+    if !api.features.isEnabled("events") {
+        return 4
+    }
+
+    let tuned = api.withFeatureDisabled("http")
+    if tuned.features.isEnabled("http") {
+        return 5
+    }
+    if !tuned.features.isEnabled("events") {
+        return 6
+    }
+
+    return 0
+}

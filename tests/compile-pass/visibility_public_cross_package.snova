@@ -1,0 +1,13 @@
+package tests.visibility.provider
+
+
+public func helperAvailable(): int {
+    return 42
+}
+
+package tests.visibility.consumer
+
+
+func main(): int {
+    return helperAvailable()
+}

@@ -1,0 +1,24 @@
+package tests.bad
+
+
+import stdlib.snovalang.http
+import stdlib.snovalang.Console
+
+
+// warning SNOVA035: `.json<T>()` generic argument disagrees with the variable's
+// declared annotation. The annotation says `ResponseDto` but the call asks for
+// `Array<ResponseDto>`.
+
+class ResponseDto {
+    userId: int
+    title: string
+}
+
+func main(): int {
+    let client = new HttpClient()
+    let req = HttpRequest.get("https://example.com/api/item")
+    let resp = client.get(req)
+    let info: ResponseDto = resp.json<Array<ResponseDto>>()
+    Console.printline(info.title)
+    return 0
+}

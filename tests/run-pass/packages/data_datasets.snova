@@ -1,0 +1,13 @@
+package tests.packages.data_datasets
+
+
+import builtin.console.Console
+import builtin.data.Data
+
+
+func main(): int {
+    // Stage-0 runner evaluates only simple print literals today; API behavior
+    // is covered by compile-pass/data_symbols and `snova check` on this file.
+    Console.printline("datasets-api-ok")
+    return 0
+}

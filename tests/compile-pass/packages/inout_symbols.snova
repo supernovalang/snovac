@@ -1,0 +1,13 @@
+package tests.packages.inout_symbols
+
+
+import builtin.inout.InOut
+import builtin.async.Async
+
+
+async func main(): Task<int> {
+    let pipe = Pipe.make()
+    let reader = pipe.reader()
+    let writer = pipe.writer()
+    return 0
+}

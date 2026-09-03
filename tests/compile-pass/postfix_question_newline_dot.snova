@@ -1,0 +1,17 @@
+package tests.postfix_question_newline_dot
+
+class Res {
+    public method next(): int {
+        return 42
+    }
+}
+
+func getRes(): Result<Res, string> {
+    return Ok(Res())
+}
+
+func main(): int {
+    let r = getRes()?
+        .next()
+    return 0
+}

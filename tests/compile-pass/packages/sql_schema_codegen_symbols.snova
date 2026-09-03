@@ -1,0 +1,80 @@
+package tests.packages.sql_schema_codegen
+
+
+import builtin.sql.Sql.SqlTypes
+import builtin.sql.Sql.SqlBuilder
+import builtin.sql.Sql.SqlRuntime
+import builtin.sql.Sql.SqlMigrations
+
+
+@Table("users", schema = "public")
+@Unique(name = "uq_users_email", columns = ["email"])
+@Index("idx_users_email", columns = ["email"], unique = true)
+struct UserRow {
+    @PrimaryKey(name = "pk_users", columns = ["id"])
+    @Column("id", sqlType = Int64, nullable = false, default = Generated)
+    let id: long
+
+    @Column("email", sqlType = Text, nullable = false)
+    let email: string
+
+    @Column("org_id", sqlType = Int64, nullable = false)
+    @ForeignKey(
+        referencesTable = "organizations",
+        name = "fk_users_org",
+        columns = ["org_id"],
+        referencesColumns = ["id"],
+        onDelete = Cascade,
+    )
+    let orgId: long
+}
+
+@Migration(version = 1, name = "create users")
+class CreateUsers {
+    @Up("CREATE TABLE users (id BIGINT PRIMARY KEY, email TEXT NOT NULL, org_id BIGINT NOT NULL)")
+    method up(): unit {}
+
+    @Down("DROP TABLE users")
+    method down(): unit {}
+}
+
+@SqlQuery<UserRow>(
+    name = "find_user_by_email",
+    sql = "SELECT id, email, org_id FROM users WHERE email = $1",
+    dialect = Postgres,
+)
+@SqlResult(table = "users")
+struct FindUserByEmail {
+    @SqlParam("email", sqlType = Text)
+    let email: string
+}
+
+func main(): int {
+    let users = TableRef("public", "users", "u")
+    let id = ColumnRef<long>(users, "id", Int64, false)
+    let email = ColumnRef<string>(users, "email", Text, false)
+
+    let pg: SqlBuilder = SqlBuilder(Postgres)
+    let mysql: SqlBuilder = SqlBuilder(MySql)
+    let mariadb: SqlBuilder = SqlBuilder(MariaDb)
+    let mssql: SqlBuilder = SqlBuilder(MsSql)
+
+    let selected = GeneratedQuery<UserRow>("find_user_by_email", Select, Postgres, "SELECT id, email FROM users", [])
+    let spec: SqlDialectSpec = SqlDialectSpec(Postgres, DoubleQuote, DollarIndex, true, true)
+    let root: SqlAstNode = SqlAstNode(Statement, "SELECT", [])
+    let token: SqlToken = SqlToken(Keyword, "SELECT", 0, 6)
+    let insert = InsertBuilder(MySql, users, ["email"], [])
+    let update = UpdateBuilder(MariaDb, users, [], [])
+    let delete = DeleteBuilder(MsSql, users, [])
+    let schema = GeneratedSchema<UserRow>(users, [], [], [])
+    let tableRef = GeneratedTableRef<UserRow>("UserRow", users)
+    let columnRef = GeneratedColumnRef<UserRow, string>("UserRow", "email", email)
+    let unit: SqlCodegenUnit = SqlCodegenUnit("tests.packages.sql_schema_codegen", "UserRow", users, [], [selected], [])
+    let refs: SqlCompiledReferences = SqlCompiledReferences([tableRef], [columnRef], [selected], [])
+
+    // The result row type (UserRow) is annotated explicitly and independently
+    // from the params/request DTO (FindUserByEmail) — never inferred as `any`.
+    let generated: GeneratedQuery<UserRow> = sql<FindUserByEmail, UserRow>(FindUserByEmail("a@b.com"))
+
+    return 0
+}

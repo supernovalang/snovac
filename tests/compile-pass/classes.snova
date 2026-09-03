@@ -1,0 +1,29 @@
+package tests.classes
+
+
+import builtin.console.Console
+
+
+class HealthCheck {
+    method status(): string = "ok"
+    method isHealthy(): bool = status() == "ok"
+}
+
+class Counter {
+    private var count: int
+
+    public method increment(): unit {
+        count = count + 1
+    }
+
+    public method value(): int = count
+}
+
+func main(): int {
+    let check = HealthCheck()
+    let counter = Counter(0)
+    counter.increment()
+    counter.increment()
+    Console.printline(check.status())
+    return 0
+}

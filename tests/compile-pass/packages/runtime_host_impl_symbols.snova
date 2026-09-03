@@ -1,0 +1,24 @@
+package tests.packages.runtime_host_impl_symbols
+
+import builtin.runtime.RuntimeHostImpl
+
+func main(): int {
+    let host: DefaultRuntimeHost = getDefault()
+    let console: PalConsoleSink = host.consoleSink()
+    let registry: InMemoryExtensionRegistry = host.extensionRegistry()
+    let factory: SimpleRequestScopeFactory = host.requestScopeFactory()
+    let top: InMemoryExtensionRegistry = RuntimeExtensionRegistry
+    let all = registry.all()
+    let scope: SimpleRequestScope = factory.create()
+    let line: Result<unit, string> = console.writeLine("ok")
+    if all.length() < 0 {
+        return 1
+    }
+    if scope == scope {
+        return 0
+    }
+    if line == Result.Ok(unit) {
+        return 0
+    }
+    return 0
+}

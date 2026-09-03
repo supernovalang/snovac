@@ -1,0 +1,21 @@
+package tests.packages.errors_backtrace_symbols
+
+
+import builtin.errors.Errors
+import builtin.console.Console
+
+
+func main(): int {
+    let cause = Errors.new("disk full")
+    let err = Errors.wrap(cause, "saving profile failed")
+    let trace = Errors.backtrace()
+    Console.log(trace)
+
+    let problem: ProblemDetail = ProblemDetail.of(404, "Not Found", "user 42 does not exist")
+    let webErr = WebResponseException.of(404, "Not Found", "user 42 does not exist")
+    let status = webErr.status()
+    let detail: ProblemDetails = problem
+    let detailText = detail.detail()
+
+    return 0
+}

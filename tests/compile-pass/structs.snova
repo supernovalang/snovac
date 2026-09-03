@@ -1,0 +1,17 @@
+package tests.structs
+
+
+struct Point {
+    public let x: decimal
+    public let y: decimal
+
+    method distanceFromOrigin(): decimal {
+        return x * x + y * y
+    }
+}
+
+func main(): int {
+    let p = Point(3.0, 4.0)
+    let d = p.distanceFromOrigin()
+    return 0
+}

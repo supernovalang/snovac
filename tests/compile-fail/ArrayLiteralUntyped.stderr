@@ -1,0 +1,1 @@
+error[SNOVA100]: variable 'ids' is initialized with an empty array literal; declare the array type after the variable name (e.g. `var ids: Array<string> = []`)

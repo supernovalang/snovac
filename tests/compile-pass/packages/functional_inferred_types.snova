@@ -1,0 +1,19 @@
+package tests.packages.functional_inferred_types
+
+
+import builtin.functional.Functional
+import builtin.console.Console
+
+
+let globalNumbers = [1, 2, 3, 4]
+let globalEvens = globalNumbers.filter((n) -> n > 1)
+
+func main(): int {
+    let labels = globalEvens.map((n) -> n.toString())
+    let firstLabel = labels.first()
+    let total = globalEvens.reduce(0, (acc, n) -> acc + n)
+
+    labels.forEach((label) -> Console.printline(label))
+    Console.printline(total.toString())
+    return 0
+}

@@ -1,0 +1,1 @@
+error[SNOVA122]: Pulsar function `bad` must return `unit`, `Channel<T>`, or `Select<T>`.

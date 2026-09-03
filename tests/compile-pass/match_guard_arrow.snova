@@ -1,0 +1,36 @@
+package tests.good
+
+
+// A match arm reads as a lambda: the pattern supplies the bindings, the
+// optional `if` guard validates them, and the body is the lambda result.
+// That is why an arm spells its arrow `->`, exactly like a lambda does.
+
+func classify(code: int): string {
+    match code {
+        0 -> return "zero"
+        c if c > 0 -> return "positive"
+        _ -> return "negative"
+    }
+}
+
+// Guards may bind through a variant pattern too.
+enum Reading {
+    Sample(value: int)
+    Missing
+}
+
+func describe(r: Reading): string {
+    match r {
+        Reading.Sample(v) if v > 100 -> return "high"
+        Reading.Sample(v) -> return "normal"
+        Reading.Missing -> return "absent"
+    }
+}
+
+// The same arrow in lambda position.
+func apply(n: int): int {
+    let double = (x: int) -> x * 2
+    return double(n)
+}
+
+func main(): int = 0

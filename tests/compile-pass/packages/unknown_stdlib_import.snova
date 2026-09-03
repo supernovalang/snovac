@@ -1,0 +1,4 @@
+package tests.packages.failpackage
+
+
+import builtin.legacydatabase.LegacyDatabase

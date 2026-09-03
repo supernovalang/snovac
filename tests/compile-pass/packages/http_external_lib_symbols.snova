@@ -1,0 +1,32 @@
+package tests.packages.http_external_lib
+
+// Verifies HTTP lives in external builtin.http.Http, not the compiler.
+
+import builtin.http.Http.HttpClient
+import builtin.http.Http.HttpCore
+import builtin.http.Http.HttpRuntime
+import builtin.http.Http.HttpServer
+import builtin.runtimehost.RuntimeHost
+
+func checkExternalSurface(): unit {
+    let _ = HttpClient.new()
+    let _ = HttpCore.statusText(200)
+    let routes: Array<HttpRuntime.DecoratedHttpRouteEntry> =
+        HttpRuntime.httpCollectDecoratedRoutes("@GetRequest(\"/a\")\nasync func a() { return 0 }\n", [""])
+    let _ = routes
+    let _ = HttpServer.create()
+    let _ = RuntimeHost.registerDecorator(
+        "GetRequest",
+        "builtin.http.Http",
+        [RuntimeHost.ExtensionTargetKind.Function],
+        RuntimeHost.ExtensionPhase.RunTimeRequest,
+        "http.endpoint.return_type",
+        "http.route.get",
+        "test"
+    )
+}
+
+func main(): int {
+    checkExternalSurface()
+    return 0
+}

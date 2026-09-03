@@ -1,0 +1,25 @@
+package tests.packages.parallel_symbols
+
+
+import builtin.parallel.Parallel
+import builtin.context.Context
+import builtin.console.Console
+
+
+async func main(): Task<int> {
+    let doubled = await Parallel.map([1, 2, 3, 4], func(n: int): int { return n * 2 })
+    await Parallel.forEach([1, 2, 3], func(n: int): unit { Console.log("item") })
+    let total = await Parallel.reduce([1, 2, 3, 4], 0, func(a: int, b: int): int { return a + b })
+
+    let config = ParallelConfig.defaults()
+    let pool = WorkerPool.new(4, 64)
+    let accepted = pool.submit(func(): unit { Console.log("job") })
+    await pool.awaitIdle()
+    pool.shutdown()
+
+    let ctx = Context.background()
+    let group = WorkGroup.withContext(ctx)
+    group.go(func(): unit { Console.log("member") })
+    let outcome = await group.wait()
+    return 0
+}

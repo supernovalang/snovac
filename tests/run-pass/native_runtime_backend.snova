@@ -1,0 +1,13 @@
+package tests.run_pass.native_runtime_backend
+
+import builtin.console.Console
+import builtin.runtime.Runtime
+
+func main(): int {
+    let cfg = RuntimeConfig.forProfile(RuntimeProfile.Console)
+    if cfg.backend != RuntimeBackend.Snova {
+        return 1
+    }
+    Console.printline("native runtime backend ok")
+    return 0
+}

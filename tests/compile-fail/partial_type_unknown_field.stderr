@@ -1,0 +1,5 @@
+error[SNOVA028]: Unknown member `email` on `user`.
+ --> tests/compile-fail/partial_type_unknown_field.snova:19:28
+   |
+19 |     Console.printline(user.email)
+   |                            ^^^^^ `Partial<User>` only exposes User's declared fields (`name`, `age`)

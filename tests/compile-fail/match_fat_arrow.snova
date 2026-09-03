@@ -1,0 +1,14 @@
+package tests.bad
+
+
+// error: `=>` is not Snovalang syntax. Match arms and lambdas both use `->`.
+// An arm is a lambda over its pattern bindings, so the two share one arrow.
+
+func classify(code: int): string {
+    match code {
+        0 => return "zero"
+        _ => return "other"
+    }
+}
+
+func main(): int = 0

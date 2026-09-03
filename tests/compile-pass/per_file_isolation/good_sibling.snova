@@ -1,0 +1,5 @@
+package tests.per_file_isolation.good_sibling
+
+func helper(): int {
+    return 0
+}

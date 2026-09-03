@@ -1,0 +1,18 @@
+package tests.run_pass.documented_multibyte
+
+
+import builtin.console.Console
+
+
+// Regression fixture: `@Documented(...)` blocks and text containing
+// multibyte UTF-8 characters (accents, em dash, emoji) must not cause a
+// "byte index not a char boundary" panic in the Stage-0 self-check text
+// scanner (crates/snovalang/src/native/selfcheck/text.rs).
+@Documented(
+    description: "Saudação em português com acentuação: café, ação, coração 🎉",
+    example: "main()"
+)
+func main(): int {
+    Console.printline("Olá, mundo! Café, ação, coração — 🎉🚀")
+    return 0
+}

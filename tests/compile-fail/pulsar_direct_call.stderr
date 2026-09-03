@@ -1,0 +1,1 @@
+error[SNOVA124]: Pulsar function `worker` must be launched with `pulsar worker(...)`.

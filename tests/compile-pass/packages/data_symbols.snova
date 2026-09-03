@@ -1,0 +1,53 @@
+package tests.packages.data
+
+
+import builtin.data.Data
+
+
+func main(): int {
+    // Series construction and statistics.
+    let prices: Series = Series.of("price", [10.0, 12.5, 11.0, 14.0])
+    let count: int = prices.len()
+    let total: decimal = prices.sum()
+    let avg: Result<decimal, DataError> = prices.mean()
+    let spread: Result<decimal, DataError> = prices.stddev()
+    let mid: Result<decimal, DataError> = prices.median()
+    let p90: Result<decimal, DataError> = prices.quantile(0.9)
+
+    // Transformations.
+    let scaled: Series = prices.scale(2.0)
+    let shifted: Series = prices.shift(-1.0)
+    let cumulative: Series = prices.cumulativeSum()
+    let deltas: Series = prices.diff()
+    let normalized: Result<Series, DataError> = prices.normalize()
+    let standardized: Result<Series, DataError> = prices.zscore()
+
+    // Element-wise arithmetic.
+    let volumes: Series = Series.of("volume", [1.0, 2.0, 3.0, 4.0])
+    let revenue: Result<Series, DataError> = prices.multiply(volumes)
+
+    // Two-series statistics and regression.
+    let cov: Result<decimal, DataError> = Stats.covariance(prices, volumes)
+    let corr: Result<decimal, DataError> = Stats.correlation(prices, volumes)
+    let fit: Result<LinearModel, DataError> = Stats.linearRegression(volumes, prices)
+
+    // DataFrame operations.
+    let frame: DataFrame = DataFrame.new()
+    let withPrices: Result<DataFrame, DataError> = frame.withColumn("price", prices)
+    let withVolumes: Result<DataFrame, DataError> = frame.withColumn("volume", volumes)
+    let rows: int = frame.rowCount()
+    let names: Array<string> = frame.columnNames()
+    let priceCol: Result<Series, DataError> = frame.column("price")
+    let projected: Result<DataFrame, DataError> = frame.selectColumns(["price"])
+    let sorted: Result<DataFrame, DataError> = frame.sortBy("price", true)
+    let top: DataFrame = frame.head(2)
+    let totalPrice: Result<decimal, DataError> = frame.sumOf("price")
+    let summary: string = frame.describe()
+
+    // CSV round-trip surface.
+    let parsed: Result<DataFrame, DataError> = Csv.parse("a,b\n1,2\n3,4", true)
+    let written: string = Csv.write(frame)
+    let fields: Array<string> = splitCsvLine("1,\"a,b\",3")
+
+    return 0
+}

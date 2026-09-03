@@ -1,0 +1,1 @@
+error[SNOVA125]: Mutable variable `counter` cannot be captured by a pulsar without a Sync primitive.

@@ -1,0 +1,16 @@
+package tests.packages.context_cancel_symbols
+
+
+import builtin.context.Context
+import builtin.console.Console
+
+
+func main(): int {
+    let handle = Context.withCancelHandle(Context.background())
+    let ctx = handle.context()
+    if ctx.isDone() {
+        Console.log("already cancelled")
+    }
+    handle.cancel()
+    return 0
+}

@@ -1,0 +1,31 @@
+package tests.auth.symbols
+
+
+import builtin.auth.Auth.Auth
+import builtin.auth.Auth.OAuth2
+import builtin.auth.Auth.Oidc
+
+
+func main(): int {
+    let oauthConfig = OAuth2ClientConfig.new(
+        "client-id",
+        "client-secret",
+        "https://id.example.com/token",
+        "https://id.example.com/authorize",
+        "https://app.example.com/callback",
+        ["openid", "profile"]
+    )
+    let _oauth = OAuth2Client.withConfig(oauthConfig)
+    let _oidc = OidcClient.fromOAuth2(_oauth)
+
+    let authConfig = AuthConfig.oidc(
+        "https://id.example.com",
+        "client-id",
+        "client-secret",
+        "https://app.example.com/callback"
+    )
+    let _auth = Auth.fromConfig(authConfig)
+
+    let _header = Auth.bearerHeader("token-value")
+    return 0
+}

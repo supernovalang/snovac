@@ -1,0 +1,6 @@
+package test.pkg_call
+
+func main(): int {
+    let result = SomePackage::functionName(42)
+    return 0
+}

@@ -1,0 +1,127 @@
+package builtin.decorators.Decorators
+
+
+// ── Inheritance-based decorator foundation ──────────────────────────────────
+//
+// `Decorator` is a real, importable interface — not just a naming
+// convention like the older `@Decorator`/`@Decorator` marking
+// (`crates/snovalang/src/native/decorators.rs::is_decorator_defined`). It
+// lives in `builtin/` (like `builtin.errors.Errors`/`builtin.metadata.
+// Documented`) precisely so it ships with the language itself: any library
+// — `stdlib.sonar.*`, a project's own package, a third-party one — can
+// `import builtin.decorators.Decorators` and build its own decorator kit on
+// top of it, without depending on any specific stdlib package.
+//
+// Same idiom already proven in `builtin.errors.Errors`
+// (`interface Err { method message(): string ... }`, `class DomainError :
+// Error { override method message(): string { ... } }`): an `interface`
+// declares signatures only; a `struct`/`class` implements it by providing
+// bodies, and `override` marks a body that satisfies a supertype's method.
+//
+//   interface Decorator {
+//       method runBeforeExecution(): unit
+//       method runAfterExecution(): unit
+//   }
+//
+// Four kinds implement `Decorator`, one per thing a decorator can target.
+// Each provides no-op bodies for the two shared hooks (so an author who only
+// cares about one half of the pair doesn't have to override the other) and
+// adds the 1-2 hooks specific to its own target:
+//
+//   FieldDecorator      — fields:      runOnGet / runOnSet
+//   MethodDecorator     — methods:     runOnBind / runOnError
+//   FunctionalDecorator — functions:   runInParallel
+//   StructureDecorator  — classes/structs/interfaces: runOnInstanceCreated
+//
+// A concrete, author-written decorator extends one of the four kinds and
+// carries its own state + a constructor that requires its own arguments —
+// the same worked pattern already documented for `@Cache(ttl: 60)` in
+// `stdlib.sonar.Decorators` (`decoratorArg`/`hasDecorator`):
+//
+//   @FunctionalDecorator
+//   public struct Retry : FunctionalDecorator {
+//       public let times: int
+//       public let backoffMs: int
+//
+//       public method new(times: int, backoffMs: int) {
+//           this.times = times
+//           this.backoffMs = backoffMs
+//       }
+//
+//       public override method runBeforeExecution(): unit {
+//           Console.printline("Retry: up to " + times.toString() + " attempts")
+//       }
+//       public override method runAfterExecution(): unit {
+//           Console.printline("Retry: attempt finished")
+//       }
+//       public override method runInParallel(): unit {
+//           Console.printline("Retry: backing off " + backoffMs.toString() + "ms")
+//       }
+//   }
+//
+// This module only defines the shape. Actually *running* the hooks around a
+// decorated target — and doing so "using events," publishing each
+// transition on an event bus — is a library concern built on top of this
+// foundation, not something this file does itself. `stdlib.sonar.
+// DecoratorRuntime` (`libs/stdlib.sonar.async`) is one such library: it
+// wires `Decorator` instances into `stdlib.sonar.Events`' `EventBus` and
+// `stdlib.sonar.Pulsars`. It is an example, not the only way — any user
+// library can import this file directly and wire its own runtime instead.
+//
+// As with `is_decorator_defined`, nothing here is enforced by the compiler:
+// `extends`/`override`/`interface` parse but are not semantically checked
+// today, so this stays a real, usable shape rather than a validated one.
+
+public interface Decorator {
+    method runBeforeExecution(): unit
+    method runAfterExecution(): unit
+}
+
+// Base for decorators attached to a field. "Before/after" means before/after
+// a read-or-write access; `runOnGet`/`runOnSet` distinguish which happened.
+public struct FieldDecorator : Decorator {
+    public override method runBeforeExecution(): unit {}
+    public override method runAfterExecution(): unit {}
+
+    // Fires when the decorated field is read.
+    public method runOnGet(): unit {}
+
+    // Fires when the decorated field is written.
+    public method runOnSet(): unit {}
+}
+
+// Base for decorators attached to a method on a class/struct instance.
+public struct MethodDecorator : Decorator {
+    public override method runBeforeExecution(): unit {}
+    public override method runAfterExecution(): unit {}
+
+    // Fires once when this decorator instance is mounted onto a concrete
+    // instance (the method-decorator equivalent of EventBus.mountDecorated).
+    public method runOnBind(): unit {}
+
+    // Fires when the decorated method's execution raises/produces an error.
+    public method runOnError(): unit {}
+}
+
+// Base for decorators attached to a free function. Supersedes the earlier
+// `@Interceptor` struct (beforeRun/runWhen/afterRun function-valued fields,
+// previously in `stdlib.sonar.Events`) — same idea, expressed through
+// inheritance and override instead of passing callback values.
+public struct FunctionalDecorator : Decorator {
+    public override method runBeforeExecution(): unit {}
+    public override method runAfterExecution(): unit {}
+
+    // Fires as a fire-and-forget side path, meant to be run on its own
+    // pulsar by whichever runtime library invokes this decorator.
+    public method runInParallel(): unit {}
+}
+
+// Base for decorators attached to a class, struct, or interface declaration
+// itself (as opposed to one of its members).
+public struct StructureDecorator : Decorator {
+    public override method runBeforeExecution(): unit {}
+    public override method runAfterExecution(): unit {}
+
+    // Fires once per new instance of the decorated structure.
+    public method runOnInstanceCreated(): unit {}
+}

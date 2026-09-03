@@ -1,0 +1,18 @@
+package tests.bad.packages
+
+import builtin.events.Events
+import builtin.console.Console
+
+// error[SNOVA023]: `beforeRunFunc` is referenced in a decorator argument but
+// never declared or imported.
+
+class AuthEndpoints {
+    @Interceptor(beforeRun: beforeRunFunc)
+    async method login(): Task<unit> {
+        Console.printline("login")
+    }
+}
+
+async func main(): Task<int> {
+    return 0
+}

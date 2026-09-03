@@ -1,0 +1,14 @@
+package tests.bad
+
+import builtin.console.Console
+
+// error[SNOVA023]: `todoId` is assigned without a prior declaration.
+// Every binding must be introduced with `let`/`var`/`const`, a parameter, or a
+// `for`/`catch` binder. A bare `name = expr` is an unresolved name and must be
+// rejected at compile time rather than deferred to the Stage-0 runner.
+
+func main(): int {
+    todoId = "1"
+    Console.printline("Todo: " + todoId)
+    return 0
+}

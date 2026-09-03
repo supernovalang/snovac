@@ -1,0 +1,6 @@
+package tests.pulsar_receive_outside_pulsar
+
+func main(): int {
+    let v <~ chan
+    return 0
+}

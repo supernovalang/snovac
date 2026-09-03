@@ -1,0 +1,39 @@
+package tests.run_pass.quick_sort
+
+
+import builtin.console.Console
+
+
+func partition(arr: Array<int>, lo: int, hi: int): int {
+    let pivot = arr.get(hi)
+    var i = lo - 1
+    var j = lo
+    while j < hi {
+        if arr.get(j) <= pivot {
+            i = i + 1
+            let tmp = arr.get(i)
+            arr.set(i, arr.get(j))
+            arr.set(j, tmp)
+        }
+        j = j + 1
+    }
+    let tmp = arr.get(i + 1)
+    arr.set(i + 1, arr.get(hi))
+    arr.set(hi, tmp)
+    return i + 1
+}
+
+func quickSort(arr: Array<int>, lo: int, hi: int): unit {
+    if lo < hi {
+        let p = partition(arr, lo, hi)
+        quickSort(arr, lo, p - 1)
+        quickSort(arr, p + 1, hi)
+    }
+}
+
+func main(): int {
+    let arr = [5, 3, 8, 1, 9, 2, 7, 4, 6]
+    quickSort(arr, 0, arr.len() - 1)
+    Console.printline(arr.join(", "))
+    return 0
+}

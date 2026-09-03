@@ -1,0 +1,16 @@
+package tests.packages.native_snova_runtime_symbols
+
+import builtin.nativesnovaruntime.NativeSnovaRuntime
+
+func main(): int {
+    let runner = SourceProgramRunner.fromSource("func main(): int { return 0 }")
+    let mainFn: SourceFnDef = runner.lookup("main")
+    let text: string = evalLiteralOrArg("hello", 0)
+    if mainFn.name != "main" {
+        return 1
+    }
+    if text != "hello" {
+        return 1
+    }
+    return 0
+}

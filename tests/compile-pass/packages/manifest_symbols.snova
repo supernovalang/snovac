@@ -1,0 +1,34 @@
+package tests.packages.manifest_symbols
+
+import builtin.manifest.Manifest
+
+func checkParser(): unit {
+    let text: string = "name = \"demo\"\nversion = \"1.0.0\"\nmain = \"src/app.snova\"\n[runtime]\nbackend = \"snova\"\nprofile = \"api\"\n[features]\nenable = [\"Http\", \"Async\"]\n[runtime.extensions]\nenable = [\"http\", \"json\"]\n"
+    let doc: TomlDocument = parse(text)
+    match docName(doc) {
+        Option.Some(n) -> {
+            if n != "demo" { return }
+        }
+        Option.None -> {}
+    }
+    if docRuntimeProfile(doc) != "api" {
+        return
+    }
+    let features: Array<string> = docEnabledFeatures(doc)
+    if features.length() < 2 {
+        return
+    }
+    let extensions: Array<string> = docEnabledExtensions(doc)
+    if extensions.length() < 2 {
+        return
+    }
+    match getBool(doc, "runtime.backend") {
+        Option.Some(_) -> {}
+        Option.None -> {}
+    }
+}
+
+func main(): int {
+    checkParser()
+    return 0
+}

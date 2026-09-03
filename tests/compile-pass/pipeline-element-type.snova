@@ -1,0 +1,34 @@
+package tests.pipeline_element_type
+
+
+import builtin.console.Console
+
+
+// A data-pipeline lambda parameter iterates the elements of its receiver, so
+// `post` binds to `Post` (the element type of `Array<Post>`), not `Array<Post>`.
+// Member access on the element and references to enclosing bindings/functions
+// must all resolve.
+
+struct Post {
+    public let id: int
+    public let title: string
+}
+
+func loadPosts(): Array<Post> {
+    return Array<Post>.new()
+}
+
+func label(value: int): string {
+    return value.toString()
+}
+
+func main(): int {
+    let prefix = "post-"
+    let posts: Array<Post> = loadPosts()
+
+    // `post.id` / `post.title` resolve against `Post`.
+    posts.map((post) -> post.id).forEach((n) -> Console.printline(n.toString()))
+    posts.forEach((post) -> Console.printline(prefix + label(post.id) + post.title))
+
+    return 0
+}

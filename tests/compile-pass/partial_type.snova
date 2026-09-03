@@ -1,0 +1,32 @@
+package tests.partial_type
+
+
+import builtin.console.Console
+
+
+// `Partial<T>` (Stage 0, crates/snovalang/src/native/validate/static_facts.rs)
+// is a compiler-synthesized view of a struct where every field is accessed as
+// if it were `Option<FieldType>` — no hand-written mirror struct required.
+// This fixture exercises the accepted shape: constructing a `Partial<User>`
+// and accessing real fields of the underlying `User` struct. The rejected
+// shape (accessing a field `User` doesn't declare) lives in
+// tests/compile-fail/partial_type_unknown_field.snova.
+
+struct User {
+    name: string
+    age: int
+}
+
+func describe(user: Partial<User>): unit {
+    Console.printline(user.name)
+    Console.printline(user.age.toString())
+}
+
+func main(): int {
+    let user = Partial<User>(name: "Ada", age: 36)
+    describe(user)
+
+    let annotated: Partial<User> = Partial<User>(name: "Grace", age: 41)
+    Console.printline(annotated.name)
+    return 0
+}

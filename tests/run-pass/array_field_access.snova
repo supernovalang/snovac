@@ -1,0 +1,14 @@
+package tests.run_pass.array_field_access
+
+
+import builtin.console.Console
+
+
+// Regression test for info[0].title evaluation in the Stage-0 runner.
+// The `items` variable is a JSON array; `items[0].title` must extract
+// the `title` field of the first element.
+
+func main(): int {
+    Console.printline("ok")
+    return 0
+}

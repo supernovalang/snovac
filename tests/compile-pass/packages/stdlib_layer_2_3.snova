@@ -1,0 +1,27 @@
+package tests.packages.layer23
+
+import builtin.async.Async
+import builtin.channels.Channels
+import builtin.context.Context
+import builtin.database.Database
+import builtin.http.Http
+import builtin.http.HttpRequest
+import builtin.net.Net
+import builtin.sync.Sync
+import builtin.unsafe.Unsafe
+
+struct Mutex {}
+struct HttpRequest {}
+struct HttpClient {}
+struct Db {}
+struct OwnedPtr {}
+
+async func main(): Task<int> {
+    let channel = makeChannel<string>(1)
+    let mutex = Mutex()
+    let request = HttpRequest()
+    let client = HttpClient()
+    let db = Db()
+    let pointer = OwnedPtr()
+    return 0
+}
