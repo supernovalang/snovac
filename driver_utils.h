@@ -2,9 +2,9 @@
 #ifndef SNOVAC_DRIVER_UTILS_H
 #define SNOVAC_DRIVER_UTILS_H
 
-#include <stdio.h>
-#include <stddef.h>
 #include "diag.h"
+#include <stddef.h>
+#include <stdio.h>
 
 #ifndef SNOVAC_VERSION
 #define SNOVAC_VERSION "0.0.1-p1"
@@ -22,6 +22,7 @@ void dirname_into(const char *path, char *out, size_t out_sz);
 void normalize_path_into(const char *path, char *out, size_t out_sz);
 int path_is_dir(const char *path);
 int path_is_file(const char *path);
+void ensure_parent_dir_exists(const char *path);
 int find_builtin_root(const char *start_dir, char *out, size_t out_sz);
 
 #endif /* SNOVAC_DRIVER_UTILS_H */
