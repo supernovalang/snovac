@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const MANIFEST_NAMES[] = {"snova.mod", "snova.toml", "builtin.toml.Toml"};
+static const char *const MANIFEST_NAMES[] = {"snova.mdlo", "snova.toml"};
 
 static int find_manifest_dir(const char *start_dir, char *out, size_t out_sz) {
     char cur[SNOVAC_PATH_MAX + 64];
@@ -63,6 +63,72 @@ void project_discover(const char *path, SnProject *out) {
     if (path_is_dir(deps)) {
         normalize_path_into(deps, out->deps_root, sizeof(out->deps_root));
     }
+
+    char cache[SNOVAC_PATH_MAX + 32];
+    snprintf(cache, sizeof(cache), "%s/.snovalang/cache", manifest_dir);
+    if (path_is_dir(cache)) {
+        normalize_path_into(cache, out->cache_root, sizeof(out->cache_root));
+    }
+}
+
+void project_set_offline_cache(SnProject *proj, const char *cache_dir) {
+    if (!proj) return;
+    proj->use_offline_cache = 1;
+    if (cache_dir && cache_dir[0]) {
+        normalize_path_into(cache_dir, proj->cache_root, sizeof(proj->cache_root));
+    } else if (!proj->cache_root[0]) {
+        const char *home = getenv("HOME");
+        if (home && home[0]) {
+            snprintf(proj->cache_root, sizeof(proj->cache_root), "%s/.snovalang/cache", home);
+        } else {
+            snprintf(proj->cache_root, sizeof(proj->cache_root), ".snovalang/cache");
+        }
+    }
+}
+
+int find_std_root_for_project(const char *source_root, char *out, size_t out_sz) {
+    const char *env_dir = getenv("SNOVA_STD_DIR");
+    if (env_dir && env_dir[0] && path_is_dir(env_dir)) {
+        snprintf(out, out_sz, "%s", env_dir);
+        return 1;
+    }
+    char candidate[SNOVAC_PATH_MAX + 64];
+    /* Check relative to source_root */
+    if (source_root && source_root[0]) {
+        snprintf(candidate, sizeof(candidate), "%s/../snova-std/src", source_root);
+        if (path_is_dir(candidate)) {
+            normalize_path_into(candidate, out, out_sz);
+            return 1;
+        }
+        snprintf(candidate, sizeof(candidate), "%s/../../snova-std/src", source_root);
+        if (path_is_dir(candidate)) {
+            normalize_path_into(candidate, out, out_sz);
+            return 1;
+        }
+    }
+    /* Check relative to g_exe_dir */
+    if (g_exe_dir[0]) {
+        snprintf(candidate, sizeof(candidate), "%s/../snova-std/src", g_exe_dir);
+        if (path_is_dir(candidate)) {
+            normalize_path_into(candidate, out, out_sz);
+            return 1;
+        }
+        snprintf(candidate, sizeof(candidate), "%s/../../snova-std/src", g_exe_dir);
+        if (path_is_dir(candidate)) {
+            normalize_path_into(candidate, out, out_sz);
+            return 1;
+        }
+    }
+    /* Check in ~/.snovalang/std/src */
+    const char *home = getenv("HOME");
+    if (home && home[0]) {
+        snprintf(candidate, sizeof(candidate), "%s/.snovalang/std/src", home);
+        if (path_is_dir(candidate)) {
+            normalize_path_into(candidate, out, out_sz);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int find_builtin_root_for_project(const char *source_root, char *out, size_t out_sz) {
@@ -84,6 +150,10 @@ size_t scan_project_roots(SnPackageGraph *graph, const SnProject *proj) {
     size_t own = sn_pkggraph_scan_root(graph, proj->source_root);
     if (proj->deps_root[0]) {
         sn_pkggraph_scan_root(graph, proj->deps_root);
+    }
+    char std_dir[SNOVAC_PATH_MAX];
+    if (find_std_root_for_project(proj->source_root, std_dir, sizeof(std_dir))) {
+        sn_pkggraph_scan_root(graph, std_dir);
     }
     char builtin_dir[SNOVAC_PATH_MAX];
     if (find_builtin_root_for_project(proj->source_root, builtin_dir, sizeof(builtin_dir))) {

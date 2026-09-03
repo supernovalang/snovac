@@ -169,6 +169,10 @@ int cmd_check_project(const char *path, int typecheck_bodies) {
     SnPackageGraph graph;
     sn_pkggraph_init(&graph, &arena, &intern, &diag);
     size_t scanned = scan_project_roots(&graph, &proj);
+    char builtin_dir[1024];
+    if (find_builtin_root_for_project(proj.source_root, builtin_dir, sizeof(builtin_dir))) {
+        sn_pkggraph_load_native_manifest(&graph, builtin_dir);
+    }
     sn_pkggraph_link(&graph);
 
     SnList cycle;

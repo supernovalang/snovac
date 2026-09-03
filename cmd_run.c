@@ -8,6 +8,7 @@
 
 #include "cmd_run.h"
 #include "arena.h"
+#include "cmd_check.h"
 #include "diag.h"
 #include "driver_utils.h"
 #include "eval.h"
@@ -21,9 +22,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-int cmd_run_project(const char *path) {
+int cmd_run_project_with_cache(const char *path, const char *offline_cache) {
+    int check_rc = cmd_check_project(path, 1);
+    if (check_rc != 0) {
+        return check_rc;
+    }
+
     SnProject proj;
     project_discover(path, &proj);
+    if (offline_cache) {
+        project_set_offline_cache(&proj, offline_cache);
+    }
 
     SnArena arena;
     sn_arena_init(&arena, 4 * 1024 * 1024);
@@ -34,7 +43,7 @@ int cmd_run_project(const char *path) {
 
     SnPackageGraph graph;
     sn_pkggraph_init(&graph, &arena, &intern, &diag);
-    sn_pkggraph_scan_root(&graph, proj.source_root);
+    scan_project_roots(&graph, &proj);
 
     SnUnit merged;
     memset(&merged, 0, sizeof(merged));
@@ -70,6 +79,10 @@ int cmd_run_project(const char *path) {
 
     sn_arena_free(&arena);
     return rc;
+}
+
+int cmd_run_project(const char *path) {
+    return cmd_run_project_with_cache(path, NULL);
 }
 
 int cmd_run(const char *path) {

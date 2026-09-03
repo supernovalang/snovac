@@ -113,10 +113,13 @@ static inline int at_name(P *p) {
 
 static inline void error_at(P *p, const SnToken *t, int code,
                             const char *fmt, ...) {
+    p->errors++;
+    if (!p->diag) {
+        return;
+    }
     if (p->panic) {
         return;
     }
-    p->errors++;
     p->panic = 1;
 
     /* sn_diag_emit is variadic; format here into a fixed buffer so this helper

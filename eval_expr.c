@@ -207,9 +207,51 @@ static Value call_lambda_with_value(Interp *in, const LambdaVal *lam,
     return v_unit();
 }
 
+static int try_array_method(Interp *in, Env *env, Value recv,
+                            const SnExpr *call, Value *out) {
+    const SnExpr *callee = call->lhs;
+    const char *m = callee->text;
+    if (!recv.as.arr) {
+        return 0;
+    }
+    if (strcmp(m, "len") == 0 || strcmp(m, "length") == 0) {
+        *out = v_int((long long)recv.as.arr->items.len);
+        return 1;
+    }
+    if (strcmp(m, "isEmpty") == 0) {
+        *out = v_bool(recv.as.arr->items.len == 0);
+        return 1;
+    }
+    if (strcmp(m, "push") == 0) {
+        if (call->args.len > 0) {
+            Value item = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            Value *boxed = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
+            *boxed = item;
+            sn_list_push(in->arena, &recv.as.arr->items, boxed);
+        }
+        *out = v_int((long long)recv.as.arr->items.len);
+        return 1;
+    }
+    if (strcmp(m, "pop") == 0) {
+        if (recv.as.arr->items.len > 0) {
+            Value *last = (Value *)recv.as.arr->items.items[recv.as.arr->items.len - 1];
+            recv.as.arr->items.len--;
+            *out = *last;
+        } else {
+            *out = v_unit();
+        }
+        return 1;
+    }
+    if (strcmp(m, "clear") == 0) {
+        recv.as.arr->items.len = 0;
+        *out = v_int(0);
+        return 1;
+    }
+    return 0;
+}
+
 static int try_string_method(Interp *in, Env *env, Value recv,
                              const SnExpr *call, Value *out) {
-    (void)env;
     const SnExpr *callee = call->lhs;
     const char *m = callee->text;
     const char *s = recv.as.s ? recv.as.s : "";
@@ -231,6 +273,119 @@ static int try_string_method(Interp *in, Env *env, Value recv,
     }
     if (strcmp(m, "len") == 0 || strcmp(m, "length") == 0) {
         *out = v_int((long long)strlen(s));
+        return 1;
+    }
+    if (strcmp(m, "isEmpty") == 0) {
+        *out = v_bool(strlen(s) == 0);
+        return 1;
+    }
+    if (strcmp(m, "trim") == 0) {
+        size_t len = strlen(s);
+        size_t start = 0;
+        while (start < len && isspace((unsigned char)s[start])) start++;
+        size_t end = len;
+        while (end > start && isspace((unsigned char)s[end - 1])) end--;
+        char *buf = sn_arena_strndup(in->arena, s + start, end - start);
+        *out = v_str(buf);
+        return 1;
+    }
+    if (strcmp(m, "startsWith") == 0) {
+        if (call->args.len > 0) {
+            Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            const char *prefix = (arg.kind == V_STRING && arg.as.s) ? arg.as.s : "";
+            size_t plen = strlen(prefix);
+            *out = v_bool(strncmp(s, prefix, plen) == 0);
+        } else {
+            *out = v_bool(0);
+        }
+        return 1;
+    }
+    if (strcmp(m, "endsWith") == 0) {
+        if (call->args.len > 0) {
+            Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            const char *suffix = (arg.kind == V_STRING && arg.as.s) ? arg.as.s : "";
+            size_t slen = strlen(s);
+            size_t suflen = strlen(suffix);
+            *out = v_bool(slen >= suflen && strcmp(s + (slen - suflen), suffix) == 0);
+        } else {
+            *out = v_bool(0);
+        }
+        return 1;
+    }
+    if (strcmp(m, "contains") == 0) {
+        if (call->args.len > 0) {
+            Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            const char *sub = (arg.kind == V_STRING && arg.as.s) ? arg.as.s : "";
+            *out = v_bool(strstr(s, sub) != NULL);
+        } else {
+            *out = v_bool(0);
+        }
+        return 1;
+    }
+    if (strcmp(m, "charAt") == 0) {
+        if (call->args.len > 0) {
+            Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            long long idx = as_int(in, arg, call->span);
+            size_t slen = strlen(s);
+            if (idx >= 0 && (size_t)idx < slen) {
+                char chbuf[2] = { s[idx], '\0' };
+                Value chVal = v_str(sn_arena_strndup(in->arena, chbuf, 1));
+                SnList payload = {0};
+                Value *boxed = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
+                *boxed = chVal;
+                sn_list_push(in->arena, &payload, boxed);
+                *out = v_variant(in, "Some", payload);
+            } else {
+                SnList empty = {0};
+                *out = v_variant(in, "None", empty);
+            }
+        } else {
+            SnList empty = {0};
+            *out = v_variant(in, "None", empty);
+        }
+        return 1;
+    }
+    if (strcmp(m, "substring") == 0) {
+        size_t slen = strlen(s);
+        long long start = 0;
+        long long end = (long long)slen;
+        if (call->args.len > 0) {
+            start = as_int(in, eval_expr(in, env, (const SnExpr *)call->args.items[0]), call->span);
+            if (start < 0) start = 0;
+            if ((size_t)start > slen) start = (long long)slen;
+        }
+        if (call->args.len > 1) {
+            end = as_int(in, eval_expr(in, env, (const SnExpr *)call->args.items[1]), call->span);
+            if (end < start) end = start;
+            if ((size_t)end > slen) end = (long long)slen;
+        }
+        char *buf = sn_arena_strndup(in->arena, s + start, (size_t)(end - start));
+        *out = v_str(buf);
+        return 1;
+    }
+    if (strcmp(m, "replaceFirst") == 0) {
+        if (call->args.len >= 2) {
+            Value target = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+            Value repl = eval_expr(in, env, (const SnExpr *)call->args.items[1]);
+            const char *tstr = (target.kind == V_STRING && target.as.s) ? target.as.s : "";
+            const char *rstr = (repl.kind == V_STRING && repl.as.s) ? repl.as.s : "";
+            char *found = strstr((char *)s, tstr);
+            if (found && tstr[0]) {
+                size_t prefix_len = (size_t)(found - s);
+                size_t tlen = strlen(tstr);
+                size_t rlen = strlen(rstr);
+                size_t rest_len = strlen(found + tlen);
+                char *buf = (char *)sn_arena_alloc(in->arena, prefix_len + rlen + rest_len + 1);
+                memcpy(buf, s, prefix_len);
+                memcpy(buf + prefix_len, rstr, rlen);
+                memcpy(buf + prefix_len + rlen, found + tlen, rest_len + 1);
+                *out = v_str(buf);
+            } else {
+                *out = v_str(s);
+            }
+        } else {
+            *out = v_str(s);
+        }
         return 1;
     }
     return 0;
@@ -417,6 +572,10 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
         Value recv = eval_expr(in, env, callee->lhs);
         if (recv.kind == V_STRING && callee->text &&
             try_string_method(in, env, recv, e, &out)) {
+            return out;
+        }
+        if (recv.kind == V_ARRAY && callee->text &&
+            try_array_method(in, env, recv, e, &out)) {
             return out;
         }
         if (recv.kind == V_VARIANT && callee->text &&

@@ -183,13 +183,15 @@ SnTypeRep *sn_type_subst_names(SnTypeTable *t, SnTypeRep *ty,
     if (!ty || count == 0 || !param_names || !arg_types) {
         return ty;
     }
-    if (ty->tag == SN_T_TYPEVAR && ty->decl && ty->decl->name) {
+    if ((ty->tag == SN_T_TYPEVAR || ty->tag == SN_T_NAMED) && ty->decl && ty->decl->name && ty->nargs == 0) {
         for (uint32_t i = 0; i < count; i++) {
             if (param_names[i] && strcmp(param_names[i], ty->decl->name) == 0) {
                 return arg_types[i];
             }
         }
-        return ty;
+        if (ty->tag == SN_T_TYPEVAR) {
+            return ty;
+        }
     }
     if (ty->tag == SN_T_NAMED && ty->nargs > 0) {
         SnTypeRep **new_args = (SnTypeRep **)sn_arena_alloc(

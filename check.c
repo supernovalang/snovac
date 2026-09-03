@@ -177,6 +177,12 @@ static SnTypeRep *sn_check_resolve_type_base(SnChecker *c, const SnType *t) {
         SnTypeRep *base = sn_resolve_type_name(c->resolver, c->current_package,
                                                c->current_imports, t->name, t->span);
         if (!base) {
+            if (c->diag->quiet > 0 && t->name) {
+                SnSymbol *sym = (SnSymbol *)sn_arena_calloc(c->arena, sizeof(SnSymbol));
+                sym->kind = SN_SYM_TYPE;
+                sym->name = sn_intern_cstr(c->intern, t->name);
+                return sn_type_named(c->types, sym, NULL, 0);
+            }
             return sn_type_error(c->types);
         }
         if (t->args.len == 0 || !base->decl) {
@@ -695,15 +701,37 @@ static SnTypeRep *check_unary(SnChecker *c, SnExpr *e, SnTypeRep *operand) {
 
 static void check_call_args(SnChecker *c, SnExpr *call_expr, const SnSymbol *callee,
                             const SnList *params, SnTypeRep **arg_tys, size_t nargs) {
+    if (!params) {
+        return;
+    }
     if (params->len != nargs) {
         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARITY_MISMATCH, call_expr->span,
                     "expected %zu argument(s), found %zu", params->len, nargs);
         return; /* don't also report per-argument mismatches against a
                  * signature that's already known not to match */
     }
+
+    const char **param_names = NULL;
+    SnTypeRep **subst_tys = NULL;
+    uint32_t ngen = 0;
+    if (callee && callee->decl && callee->decl->generics.len > 0) {
+        ngen = (uint32_t)callee->decl->generics.len;
+        param_names = (const char **)sn_arena_alloc(c->arena, ngen * sizeof(const char *));
+        subst_tys = (SnTypeRep **)sn_arena_alloc(c->arena, ngen * sizeof(SnTypeRep *));
+        for (uint32_t gi = 0; gi < ngen; gi++) {
+            param_names[gi] = SN_LIST_AT(callee->decl->generics, const char, gi);
+            subst_tys[gi] = (gi < call_expr->type_args.len)
+                ? sn_check_resolve_type(c, SN_LIST_AT(call_expr->type_args, SnType, gi))
+                : sn_type_any(c->types);
+        }
+    }
+
     for (size_t i = 0; i < nargs; i++) {
         SnParam *p = SN_LIST_AT(*params, SnParam, i);
         SnTypeRep *expected = resolve_declared_type(c, callee, p->type);
+        if (ngen > 0 && expected) {
+            expected = sn_type_subst_names(c->types, expected, param_names, subst_tys, ngen);
+        }
         arg_tys[i] = adopt_literal_type(c, SN_LIST_AT(call_expr->args, SnExpr, i),
                                         arg_tys[i], expected);
         if (types_clash(c, arg_tys[i], expected)) {
@@ -820,6 +848,21 @@ static void check_constructor_call(SnChecker *c, SnExpr *call_expr, SnSymbol *ty
     if (nargs != total) {
         return;
     }
+    const char **param_names = NULL;
+    SnTypeRep **subst_tys = NULL;
+    uint32_t ngen = 0;
+    if (d->generics.len > 0) {
+        ngen = (uint32_t)d->generics.len;
+        param_names = (const char **)sn_arena_alloc(c->arena, ngen * sizeof(const char *));
+        subst_tys = (SnTypeRep **)sn_arena_alloc(c->arena, ngen * sizeof(SnTypeRep *));
+        for (uint32_t gi = 0; gi < ngen; gi++) {
+            param_names[gi] = SN_LIST_AT(d->generics, const char, gi);
+            subst_tys[gi] = (gi < call_expr->type_args.len)
+                ? sn_check_resolve_type(c, SN_LIST_AT(call_expr->type_args, SnType, gi))
+                : sn_type_any(c->types);
+        }
+    }
+
     size_t fi = 0;
     for (size_t i = 0; i < d->members.len; i++) {
         const SnDecl *m = SN_LIST_AT(d->members, SnDecl, i);
@@ -827,6 +870,9 @@ static void check_constructor_call(SnChecker *c, SnExpr *call_expr, SnSymbol *ty
             continue;
         }
         SnTypeRep *expected = resolve_declared_type(c, type_sym, m->type);
+        if (ngen > 0 && expected) {
+            expected = sn_type_subst_names(c->types, expected, param_names, subst_tys, ngen);
+        }
         arg_tys[fi] = adopt_literal_type(c, SN_LIST_AT(call_expr->args, SnExpr, fi),
                                          arg_tys[fi], expected);
         if (types_clash(c, arg_tys[fi], expected)) {
@@ -957,8 +1003,25 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
                             "pulsar function `%s` cannot be called directly — use `pulsar %s(...)`",
                             callee_sym->name, callee_sym->name);
             }
-            check_call_args(c, e, callee_sym, &callee_sym->decl->params, arg_tys, e->args.len);
-            result = resolve_declared_type(c, callee_sym, callee_sym->decl->ret);
+            if (e->lhs->resolved_type && e->lhs->resolved_type->tag == SN_T_FUNC) {
+                check_call_against_functype(c, e, e->lhs->resolved_type, arg_tys, e->args.len);
+                result = e->lhs->resolved_type->ret;
+            } else {
+                check_call_args(c, e, callee_sym, &callee_sym->decl->params, arg_tys, e->args.len);
+                result = resolve_declared_type(c, callee_sym, callee_sym->decl->ret);
+            }
+            if (callee_sym->decl && callee_sym->decl->generics.len > 0 && result) {
+                uint32_t ngen = (uint32_t)callee_sym->decl->generics.len;
+                const char **param_names = (const char **)sn_arena_alloc(c->arena, ngen * sizeof(const char *));
+                SnTypeRep **subst_tys = (SnTypeRep **)sn_arena_alloc(c->arena, ngen * sizeof(SnTypeRep *));
+                for (uint32_t gi = 0; gi < ngen; gi++) {
+                    param_names[gi] = SN_LIST_AT(callee_sym->decl->generics, const char, gi);
+                    subst_tys[gi] = (gi < e->type_args.len)
+                        ? sn_check_resolve_type(c, SN_LIST_AT(e->type_args, SnType, gi))
+                        : sn_type_any(c->types);
+                }
+                result = sn_type_subst_names(c->types, result, param_names, subst_tys, ngen);
+            }
             break;
         }
         if (callee_sym->kind == SN_SYM_VARIANT) {

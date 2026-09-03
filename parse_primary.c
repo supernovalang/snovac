@@ -55,11 +55,11 @@ static SnExpr *parse_lambda(P *p) {
     if (!at(p, SN_TOK_LBRACE)) {
         size_t save_pos = p->pos;
         int save_errors = p->errors;
-        int save_panic = p->panic;
-        p->panic = 1;
+        SnDiagSink *save_diag = p->diag;
+        p->diag = NULL;
         SnType *ret = parse_type(p);
-        int ok = ret != NULL && at(p, SN_TOK_LBRACE);
-        p->panic = save_panic;
+        int ok = (p->errors == save_errors) && ret != NULL && at(p, SN_TOK_LBRACE);
+        p->diag = save_diag;
         p->errors = save_errors;
         if (ok) {
             e->type = ret;
@@ -113,6 +113,7 @@ static SnExpr *parse_anon_fn(P *p, SnSpan span) {
  * expression or a block. A trailing comma is tolerated because some corpus files
  * use one. */
 void parse_match_arms(P *p, SnList *out) {
+    PCtx ctx = ctx_clear(p);
     expect(p, SN_TOK_LBRACE);
     while (!at(p, SN_TOK_RBRACE) && !at_end_p(p)) {
         SnMatchArm *arm =
@@ -151,6 +152,7 @@ void parse_match_arms(P *p, SnList *out) {
         p->panic = 0;
     }
     expect(p, SN_TOK_RBRACE);
+    ctx_restore(p, ctx);
 }
 
 static SnExpr *parse_match_expr(P *p) {

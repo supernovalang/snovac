@@ -2,9 +2,12 @@
 #ifndef SNOVAC_NATIVE_BACKEND_H
 #define SNOVAC_NATIVE_BACKEND_H
 
+#include "ast.h"
+#include "package.h"
 #include "snbc.h"
 #include "target.h"
 
 int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target, const char *output_path);
+int sn_native_compile_runtime(const SnPackageGraph *graph, const SnTargetInfo *target, const char *output_path);
 
 #endif /* SNOVAC_NATIVE_BACKEND_H */

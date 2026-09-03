@@ -7,6 +7,7 @@
 #endif
 
 #include "native_backend.h"
+#include "driver_utils.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -260,6 +261,119 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target, const char
     int status = system(cmd);
     if (status != 0) {
         fprintf(stderr, "error: compilation to native binary failed with exit status %d (command: %s)\n", status, cmd);
+        return 0;
+    }
+
+#ifndef _WIN32
+    chmod(output_path, 0755);
+#endif
+    return 1;
+}
+
+int sn_native_compile_runtime(const SnPackageGraph *graph, const SnTargetInfo *target, const char *output_path) {
+    if (!graph || !target || !output_path) return 0;
+
+    char c_source_path[1024];
+    snprintf(c_source_path, sizeof(c_source_path), "%s.rt.c", output_path);
+
+    FILE *f = fopen(c_source_path, "w");
+    if (!f) {
+        fprintf(stderr, "error: cannot create temporary runtime source %s\n", c_source_path);
+        return 0;
+    }
+
+    fprintf(f, "/* Auto-generated standalone binary with embedded Snovalang runtime */\n");
+    fprintf(f, "#define _POSIX_C_SOURCE 200809L\n");
+    fprintf(f, "#define _DEFAULT_SOURCE\n");
+    fprintf(f, "#include <stdio.h>\n");
+    fprintf(f, "#include <stdlib.h>\n");
+    fprintf(f, "#include <string.h>\n");
+    fprintf(f, "#include \"arena.h\"\n");
+    fprintf(f, "#include \"diag.h\"\n");
+    fprintf(f, "#include \"eval.h\"\n");
+    fprintf(f, "#include \"lex.h\"\n");
+    fprintf(f, "#include \"parse.h\"\n\n");
+
+    size_t file_count = 0;
+    for (SnPackageNode *node = graph->nodes; node; node = node->next) {
+        for (SnPackageFile *pf = node->files; pf; pf = pf->next) {
+            file_count++;
+        }
+    }
+
+    size_t file_idx = 0;
+    for (SnPackageNode *node = graph->nodes; node; node = node->next) {
+        for (SnPackageFile *pf = node->files; pf; pf = pf->next, file_idx++) {
+            fprintf(f, "static const char g_file_src_%zu[] = {", file_idx);
+            for (size_t ci = 0; ci < pf->src_len; ci++) {
+                if (ci % 20 == 0) fprintf(f, "\n  ");
+                fprintf(f, "%d, ", (unsigned char)pf->src[ci]);
+            }
+            fprintf(f, "0\n};\n\n");
+        }
+    }
+
+    fprintf(f, "typedef struct { const char *path; const char *src; size_t len; } EmbeddedFile;\n");
+    fprintf(f, "static const EmbeddedFile g_embedded_files[%zu] = {\n", file_count ? file_count : 1);
+    file_idx = 0;
+    for (SnPackageNode *node = graph->nodes; node; node = node->next) {
+        for (SnPackageFile *pf = node->files; pf; pf = pf->next, file_idx++) {
+            fprintf(f, "  { \"%s\", g_file_src_%zu, %zu },\n", pf->path ? pf->path : "", file_idx, pf->src_len);
+        }
+    }
+    if (file_count == 0) {
+        fprintf(f, "  { \"\", \"\", 0 }\n");
+    }
+    fprintf(f, "};\n\n");
+
+    fprintf(f, "int main(int argc, char **argv) {\n");
+    fprintf(f, "  (void)argc; (void)argv;\n");
+    fprintf(f, "  SnArena arena;\n");
+    fprintf(f, "  sn_arena_init(&arena, 8 * 1024 * 1024);\n");
+    fprintf(f, "  SnDiagSink diag;\n");
+    fprintf(f, "  sn_diag_init(&diag, \"main\", \"\", 0);\n\n");
+    fprintf(f, "  SnUnit merged;\n");
+    fprintf(f, "  memset(&merged, 0, sizeof(merged));\n\n");
+    fprintf(f, "  for (size_t i = 0; i < %zu; i++) {\n", file_count);
+    fprintf(f, "    SnDiagFile self = { g_embedded_files[i].path, g_embedded_files[i].src, g_embedded_files[i].len };\n");
+    fprintf(f, "    SnDiagFile outer = sn_diag_set_file(&diag, self);\n");
+    fprintf(f, "    SnTokenVec toks;\n");
+    fprintf(f, "    sn_lex(&arena, &diag, g_embedded_files[i].src, g_embedded_files[i].len, &toks);\n");
+    fprintf(f, "    SnUnit unit;\n");
+    fprintf(f, "    sn_parse(&arena, &diag, &toks, &unit);\n");
+    fprintf(f, "    for (size_t di = 0; di < unit.decls.len; di++) {\n");
+    fprintf(f, "      sn_list_push(&arena, &merged.decls, unit.decls.items[di]);\n");
+    fprintf(f, "    }\n");
+    fprintf(f, "    sn_diag_set_file(&diag, outer);\n");
+    fprintf(f, "  }\n\n");
+    fprintf(f, "  sn_eval_merge_extensions(&arena, &merged);\n");
+    fprintf(f, "  int rc = sn_eval_run(&arena, &diag, &merged);\n");
+    fprintf(f, "  sn_arena_free(&arena);\n");
+    fprintf(f, "  return (rc < 0) ? 1 : rc;\n");
+    fprintf(f, "}\n");
+
+    fclose(f);
+
+    char inc_dir[1024];
+    char lib_path[1024];
+    if (g_exe_dir[0]) {
+        snprintf(inc_dir, sizeof(inc_dir), "%s/..", g_exe_dir);
+        snprintf(lib_path, sizeof(lib_path), "%s/libsnovart.a", g_exe_dir);
+        if (!path_is_file(lib_path)) {
+            snprintf(lib_path, sizeof(lib_path), "%s/build/libsnovart.a", inc_dir);
+        }
+    } else {
+        snprintf(inc_dir, sizeof(inc_dir), ".");
+        snprintf(lib_path, sizeof(lib_path), "build/libsnovart.a");
+    }
+
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd), "%s %s -I%s -o %s %s %s %s && rm -f %s",
+             target->c_compiler, target->cflags, inc_dir, output_path, c_source_path, lib_path, target->ldflags, c_source_path);
+
+    int status = system(cmd);
+    if (status != 0) {
+        fprintf(stderr, "error: compilation of standalone runtime binary failed (command: %s)\n", cmd);
         return 0;
     }
 

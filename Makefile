@@ -7,7 +7,7 @@
 
 CC      ?= cc
 CFLAGS  ?= -std=c11 -O2 -g -pthread
-CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
+CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
            -Wmissing-prototypes -Wconversion -Wno-sign-conversion
 BUILD   ?= build
@@ -47,12 +47,26 @@ TEST_RESOLVE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
 TEST_CHECK_BIN = $(BUILD)/test_check
 TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtins.o $(BUILD)/check.o
 
+RT_SRCS = driver_utils.c project.c target.c native_backend.c pulsar.c async.c \
+          dump.c ast.c \
+          lex.c lex_token.c lex_literal.c \
+          parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
+          parse_decl.c parse_decl_parts.c \
+          eval.c eval_expr.c eval_stmt.c eval_string.c \
+          diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
+          snbc.c value.c vm.c emit_bc.c link_append.c
+RT_OBJS = $(addprefix $(BUILD)/,$(RT_SRCS:.c=.o))
+LIB_RT  = $(BUILD)/libsnovart.a
+
 .PHONY: all clean test unit conformance
 
-all: $(BIN)
+all: $(BIN) $(LIB_RT)
 
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
+
+$(LIB_RT): $(RT_OBJS)
+	ar rcs $@ $(RT_OBJS)
 
 $(BUILD)/%.o: %.c | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<

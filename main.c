@@ -62,18 +62,25 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* `build <path> [-o <out>] [--target=<triple>]`: compiles to standalone native binary */
+    /* `build [--project] <path> [-o <out>] [--target=<triple>] [--offline-cache[=<dir>]] [--runtime]`: compiles to standalone native binary */
     if (strcmp(argv[1], "build") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "error: build needs a file.snova\n");
+            fprintf(stderr, "error: build needs a file.snova or --project <path>\n");
             return 2;
         }
+        int is_project = 0;
+        int include_runtime = 0;
         const char *file_path = NULL;
         const char *out_path = NULL;
         const char *target_triple = NULL;
+        const char *offline_cache = NULL;
 
         for (int i = 2; i < argc; i++) {
-            if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            if (strcmp(argv[i], "--project") == 0) {
+                is_project = 1;
+            } else if (strcmp(argv[i], "--runtime") == 0) {
+                include_runtime = 1;
+            } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
                 out_path = argv[++i];
             } else if (strncmp(argv[i], "-o=", 3) == 0) {
                 out_path = argv[i] + 3;
@@ -81,26 +88,38 @@ int main(int argc, char **argv) {
                 target_triple = argv[i] + 9;
             } else if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
                 target_triple = argv[++i];
+            } else if (strncmp(argv[i], "--offline-cache=", 16) == 0) {
+                offline_cache = argv[i] + 16;
+            } else if (strcmp(argv[i], "--offline-cache") == 0) {
+                offline_cache = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[++i] : ".snovalang/cache";
             } else if (argv[i][0] != '-' && !file_path) {
                 file_path = argv[i];
             }
         }
 
         if (!file_path) {
-            fprintf(stderr, "error: build needs a file.snova\n");
+            fprintf(stderr, "error: build needs a file.snova or project path\n");
             return 2;
+        }
+        if (is_project) {
+            return cmd_build_project(file_path, out_path, target_triple, offline_cache, include_runtime);
         }
         return cmd_build(file_path, out_path, target_triple);
     }
 
-    /* `run [--project] <path>` */
+    /* `run [--project] <path> [--offline-cache[=<dir>]]` */
     if (strcmp(argv[1], "run") == 0) {
         int is_project = 0;
         const char *path = NULL;
+        const char *offline_cache = NULL;
 
         for (int i = 2; i < argc; i++) {
             if (strcmp(argv[i], "--project") == 0) {
                 is_project = 1;
+            } else if (strncmp(argv[i], "--offline-cache=", 16) == 0) {
+                offline_cache = argv[i] + 16;
+            } else if (strcmp(argv[i], "--offline-cache") == 0) {
+                offline_cache = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[++i] : ".snovalang/cache";
             } else if (argv[i][0] != '-' && !path) {
                 path = argv[i];
             }
@@ -112,7 +131,7 @@ int main(int argc, char **argv) {
         }
 
         if (is_project) {
-            return cmd_run_project(path);
+            return cmd_run_project_with_cache(path, offline_cache);
         }
         return cmd_run(path);
     }

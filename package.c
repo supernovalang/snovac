@@ -19,6 +19,7 @@ void sn_pkggraph_init(SnPackageGraph *g, SnArena *a, SnInternTable *it,
     g->file_count = 0;
     memset(&g->native_manifest, 0, sizeof(g->native_manifest));
     g->native_manifest_loaded = 0;
+    sn_pkggraph_load_native_manifest(g, NULL);
 }
 
 void sn_pkggraph_load_native_manifest(SnPackageGraph *g, const char *builtin_dir) {

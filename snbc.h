@@ -106,4 +106,8 @@ void sn_bcunit_free(SnBCUnit *unit);
 uint32_t sn_bcunit_add_string(SnBCUnit *unit, const char *str);
 uint32_t sn_bcunit_add_function(SnBCUnit *unit, const char *name, uint32_t arity);
 
+int sn_bcunit_write_file(const SnBCUnit *unit, const char *path);
+int sn_bcunit_read_file(SnBCUnit *unit, const char *path);
+int sn_bcunit_merge(SnBCUnit *dest, const SnBCUnit *src);
+
 #endif /* SNOVAC_SNBC_H */

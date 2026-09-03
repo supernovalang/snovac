@@ -97,18 +97,20 @@ static int try_generic_call_args(P *p, SnExpr *call) {
     size_t save_pos = p->pos;
     int save_errors = p->errors;
     int save_panic = p->panic;
+    SnDiagSink *save_diag = p->diag;
 
     /* Suppress diagnostics while speculating: a failed guess is not an error. */
-    p->panic = 1;
+    p->diag = NULL;
     SnList args = {0};
     parse_type_args(p, &args);
     /* A generic instantiation is followed either by a call — `foo<int>(x)` — or
-     * by a member access on the type itself: `Array<Post>.new()`. Anything else
-     * means the `<` was a comparison. */
-    int ok = !at(p, SN_TOK_EOF) &&
+     * by a member access on the type itself: `Array<Post>.new()` / `Map<K, V>.new()`.
+     * Anything else means the `<` was a comparison. */
+    int ok = (p->errors == save_errors) && !at(p, SN_TOK_EOF) &&
              (at(p, SN_TOK_LPAREN) || at(p, SN_TOK_DOT));
-    p->panic = save_panic;
+    p->diag = save_diag;
     p->errors = save_errors;
+    p->panic = save_panic;
 
     if (!ok) {
         p->pos = save_pos;

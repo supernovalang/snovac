@@ -118,16 +118,31 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
     case SN_EXPR_STRING:
     case SN_EXPR_CHAR: {
         const char *raw = e->text ? e->text : "";
-        char buf[4096];
+        char buf[8192];
         size_t n = strlen(raw);
         if (n >= 2 && raw[0] == '"' && raw[n - 1] == '"') {
-            size_t inner_len = n - 2;
-            if (inner_len >= sizeof(buf)) inner_len = sizeof(buf) - 1;
-            memcpy(buf, raw + 1, inner_len);
-            buf[inner_len] = '\0';
-        } else {
-            snprintf(buf, sizeof(buf), "%s", raw);
+            raw++;
+            n -= 2;
         }
+        size_t out_len = 0;
+        for (size_t i = 0; i < n && out_len + 1 < sizeof(buf); i++) {
+            char ch = raw[i];
+            if (ch == '\\' && i + 1 < n) {
+                char esc = raw[++i];
+                switch (esc) {
+                case 'n':  buf[out_len++] = '\n'; break;
+                case 't':  buf[out_len++] = '\t'; break;
+                case 'r':  buf[out_len++] = '\r'; break;
+                case '0':  buf[out_len++] = '\0'; break;
+                case '\\': buf[out_len++] = '\\'; break;
+                case '"':  buf[out_len++] = '"'; break;
+                default:   buf[out_len++] = esc; break;
+                }
+            } else {
+                buf[out_len++] = ch;
+            }
+        }
+        buf[out_len] = '\0';
         uint32_t s_idx = sn_bcunit_add_string(c->bc, buf);
         emit_byte(c, OP_CONST_STRING, line);
         emit_u32(c, s_idx, line);
