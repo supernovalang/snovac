@@ -22,26 +22,38 @@ void sn_pkggraph_init(SnPackageGraph *g, SnArena *a, SnInternTable *it,
 }
 
 void sn_pkggraph_load_native_manifest(SnPackageGraph *g, const char *builtin_dir) {
-    char path[SN_PKG_PATH_MAX];
-    snprintf(path, sizeof(path), "%s/native-packages.list", builtin_dir);
-    FILE *f = fopen(path, "r");
-    if (!f) {
-        return;
+    if (builtin_dir && builtin_dir[0]) {
+        char path[SN_PKG_PATH_MAX];
+        snprintf(path, sizeof(path), "%s/native-packages.list", builtin_dir);
+        FILE *f = fopen(path, "r");
+        if (f) {
+            char line[512];
+            while (fgets(line, sizeof(line), f)) {
+                size_t n = strlen(line);
+                while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r' ||
+                                 line[n - 1] == ' ' || line[n - 1] == '\t')) {
+                    line[--n] = '\0';
+                }
+                if (n == 0 || line[0] == '#') {
+                    continue;
+                }
+                const char *name = sn_intern_cstr(g->intern, line);
+                sn_list_push(g->arena, &g->native_manifest, (void *)name);
+            }
+            fclose(f);
+            g->native_manifest_loaded = 1;
+            return;
+        }
     }
-    char line[512];
-    while (fgets(line, sizeof(line), f)) {
-        size_t n = strlen(line);
-        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r' ||
-                         line[n - 1] == ' ' || line[n - 1] == '\t')) {
-            line[--n] = '\0';
-        }
-        if (n == 0 || line[0] == '#') {
-            continue;
-        }
-        const char *name = sn_intern_cstr(g->intern, line);
+    // Embedded default native packages in pure C
+    static const char *const DEFAULT_NATIVES[] = {
+        "builtin.metadata.Documented",
+        "builtin.syntax.Syntax"
+    };
+    for (size_t i = 0; i < sizeof(DEFAULT_NATIVES) / sizeof(DEFAULT_NATIVES[0]); i++) {
+        const char *name = sn_intern_cstr(g->intern, DEFAULT_NATIVES[i]);
         sn_list_push(g->arena, &g->native_manifest, (void *)name);
     }
-    fclose(f);
     g->native_manifest_loaded = 1;
 }
 
