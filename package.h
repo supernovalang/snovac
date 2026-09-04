@@ -46,6 +46,7 @@
 #define SNOVA_IMPORT_CYCLE          108
 #define SNOVA_MISSING_PACKAGE_DECL  109
 #define SNOVA_IMPORT_NOT_FOUND      50
+#define SNOVA_PKG_PATH_MISMATCH     150
 
 typedef struct SnPackageFile SnPackageFile;
 struct SnPackageFile {

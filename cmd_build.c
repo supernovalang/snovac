@@ -144,8 +144,17 @@ int cmd_build_project(const char *path, const char *out_path,
       for (size_t i = 0; i < unit.decls.len; i++) {
         SnDecl *d = SN_LIST_AT(unit.decls, SnDecl, i);
         if (d && d->kind == SN_DECL_FUNC && strcmp(d->name, "main") == 0) {
-          if (strncmp(pf->path, proj.source_root, strlen(proj.source_root)) != 0) {
-            continue; /* Skip library dependency's test main() */
+          /* Libraries NEVER have an entrypoint! Only the application root may execute main() */
+          if (strstr(pf->path, "/.snovalang/deps/") != NULL ||
+              strstr(pf->path, "\\.snovalang\\deps\\") != NULL ||
+              strstr(pf->path, "/snova-std/") != NULL ||
+              strstr(pf->path, "\\snova-std\\") != NULL ||
+              strstr(pf->path, "/snova-") != NULL ||
+              strstr(pf->path, "\\snova-") != NULL) {
+            continue; /* Skip any library dependency's main() */
+          }
+          if (proj.deps_root[0] && strncmp(pf->path, proj.deps_root, strlen(proj.deps_root)) == 0) {
+            continue;
           }
         }
         sn_list_push(&arena, &merged.decls, d);
@@ -153,6 +162,21 @@ int cmd_build_project(const char *path, const char *out_path,
 
       sn_diag_set_file(&diag, outer);
     }
+  }
+
+  /* Verify that the project actually has a main() function */
+  int has_app_main = 0;
+  for (size_t i = 0; i < merged.decls.len; i++) {
+    SnDecl *d = SN_LIST_AT(merged.decls, SnDecl, i);
+    if (d && d->kind == SN_DECL_FUNC && strcmp(d->name, "main") == 0) {
+      has_app_main = 1;
+      break;
+    }
+  }
+  if (!has_app_main) {
+    fprintf(stderr, "error: no 'main()' function found in project '%s'\n", path);
+    sn_arena_free(&arena);
+    return 1;
   }
 
   if (diag.error_count > 0) {

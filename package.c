@@ -1,4 +1,5 @@
 #include "package.h"
+#include "driver_utils.h"
 
 #include <dirent.h>
 #include <stdio.h>
@@ -153,6 +154,65 @@ static const char *canonical_import_name(const char *name) {
     return name;
 }
 
+static int find_nearest_manifest_rel_pkg(const char *file_path, char *out, size_t out_sz) {
+    if (!file_path || !file_path[0]) return 0;
+    char norm_path[SN_PKG_PATH_MAX];
+    snprintf(norm_path, sizeof(norm_path), "%s", file_path);
+    for (char *c = norm_path; *c; c++) {
+        if (*c == '\\') *c = '/';
+    }
+
+    char cur_dir[SN_PKG_PATH_MAX];
+    const char *last_slash = strrchr(norm_path, '/');
+    if (!last_slash) return 0;
+    size_t dlen = (size_t)(last_slash - norm_path);
+    if (dlen >= sizeof(cur_dir)) dlen = sizeof(cur_dir) - 1;
+    memcpy(cur_dir, norm_path, dlen);
+    cur_dir[dlen] = '\0';
+
+    char check_dir[SN_PKG_PATH_MAX];
+    snprintf(check_dir, sizeof(check_dir), "%s", cur_dir);
+
+    char manifest_dir[SN_PKG_PATH_MAX] = {0};
+    int found_manifest = 0;
+
+    for (int depth = 0; depth < 32; depth++) {
+        char mod_cand[SN_PKG_PATH_MAX];
+        snprintf(mod_cand, sizeof(mod_cand), "%s/mod.sno", check_dir);
+        struct stat st;
+        if (stat(mod_cand, &st) == 0 && S_ISREG(st.st_mode)) {
+            snprintf(manifest_dir, sizeof(manifest_dir), "%s", check_dir);
+            found_manifest = 1;
+            break;
+        }
+        char *p_slash = strrchr(check_dir, '/');
+        if (!p_slash || p_slash == check_dir) break;
+        *p_slash = '\0';
+    }
+
+    if (!found_manifest) return 0;
+
+    /* Relative path between manifest_dir and cur_dir */
+    size_t mlen = strlen(manifest_dir);
+    if (strlen(cur_dir) < mlen) return 0;
+    const char *rel = cur_dir + mlen;
+    if (*rel == '/') rel++;
+    if (!*rel) return 0;
+
+    /* If rel starts with "src/", skip "src/" because src is conventional root */
+    if (strncmp(rel, "src/", 4) == 0) rel += 4;
+    else if (strcmp(rel, "src") == 0) return 0;
+
+    /* Convert slashes to dots */
+    char pkg_buf[SN_PKG_PATH_MAX];
+    snprintf(pkg_buf, sizeof(pkg_buf), "%s", rel);
+    for (char *c = pkg_buf; *c; c++) {
+        if (*c == '/' || *c == '\\') *c = '.';
+    }
+    snprintf(out, out_sz, "%s", pkg_buf);
+    return 1;
+}
+
 /* Scans one (package? import*) section starting at *pos and advances past
  * it, stopping at whatever ends the header — a declaration keyword, another
  * `package` (the next section), or EOF. Returns 1 if the section is usable
@@ -200,13 +260,52 @@ static int scan_section(SnPackageGraph *g, const SnDiagFile *file,
         return 0;
     }
 
+    /* Enforce physical directory path matching package declaration relative to nearest mod.sno checkpoint */
+    char checkpoint_expected[SN_PKG_PATH_MAX] = {0};
+    if (find_nearest_manifest_rel_pkg(file->path, checkpoint_expected, sizeof(checkpoint_expected))) {
+        /* Check if declared package matches checkpoint_expected.
+         * Allow case-insensitive comparison or matching suffix for module prefixing. */
+        char normalized_declared[SN_PKG_PATH_MAX];
+        snprintf(normalized_declared, sizeof(normalized_declared), "%s", pf->package);
+        for (char *c = normalized_declared; *c; c++) {
+            if (*c >= 'A' && *c <= 'Z') *c = (char)(*c + ('a' - 'A'));
+        }
+        char normalized_expected[SN_PKG_PATH_MAX];
+        snprintf(normalized_expected, sizeof(normalized_expected), "%s", checkpoint_expected);
+        for (char *c = normalized_expected; *c; c++) {
+            if (*c >= 'A' && *c <= 'Z') *c = (char)(*c + ('a' - 'A'));
+        }
+
+        /* Check direct match or suffix match */
+        size_t decl_len = strlen(normalized_declared);
+        size_t exp_len = strlen(normalized_expected);
+        int matched = 0;
+        if (strcmp(normalized_declared, normalized_expected) == 0) {
+            matched = 1;
+        } else if (decl_len > exp_len && normalized_declared[decl_len - exp_len - 1] == '.' &&
+                   strcmp(normalized_declared + (decl_len - exp_len), normalized_expected) == 0) {
+            matched = 1;
+        }
+
+        if (!matched) {
+            sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_PKG_PATH_MISMATCH, pf->package_span,
+                         "package declaration '%s' does not match physical directory path relative to nearest 'mod.sno' checkpoint (expected '%s')",
+                         pf->package, checkpoint_expected);
+        }
+    }
+
     SnPackageNode *node = find_or_create(g, pf->package);
     const char *p1 = strrchr(pf->path, '/');
+    if (!p1) p1 = strrchr(pf->path, '\\');
     const char *name1 = p1 ? p1 + 1 : pf->path;
     for (SnPackageFile *existing = node->files; existing; existing = existing->next) {
+        if (strcmp(pf->path, existing->path) == 0) {
+            return 1;
+        }
         const char *p2 = strrchr(existing->path, '/');
+        if (!p2) p2 = strrchr(existing->path, '\\');
         const char *name2 = p2 ? p2 + 1 : existing->path;
-        if (strcmp(name1, name2) == 0 && strcmp(pf->path, existing->path) != 0) {
+        if (strcmp(name1, name2) == 0) {
             return 1;
         }
     }
@@ -233,10 +332,9 @@ static void skip_to_next_header_token(const SnTokenVec *toks, size_t *pos) {
 static void scan_header(SnPackageGraph *g, const char *path, const char *src,
                          size_t len) {
     SnArena *a = g->arena;
-    /* Every diagnostic below (lexical errors, a missing `package` line) is
-     * measured against THIS file, not whatever the sink was last pointed at
-     * — the scan walks a whole tree. */
-    SnDiagFile self = {path, src, len};
+    char norm_path[SN_PKG_PATH_MAX];
+    normalize_path_into(path, norm_path, sizeof(norm_path));
+    SnDiagFile self = {norm_path, src, len};
     SnDiagFile outer = sn_diag_set_file(g->diag, self);
 
     SnTokenVec toks;

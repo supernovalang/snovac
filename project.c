@@ -16,7 +16,7 @@ static const char *const MANIFEST_NAMES[] = {"mod.sno", "snova.mod", "snova.sno"
 
 static int find_manifest_dir(const char *start_dir, char *out, size_t out_sz) {
   char cur[SNOVAC_PATH_MAX + 64];
-  snprintf(cur, sizeof(cur), "%s", start_dir);
+  normalize_path_into(start_dir, cur, sizeof(cur));
 
   for (int depth = 0; depth < 32; depth++) {
     for (size_t i = 0; i < sizeof(MANIFEST_NAMES) / sizeof(MANIFEST_NAMES[0]);
@@ -24,13 +24,13 @@ static int find_manifest_dir(const char *start_dir, char *out, size_t out_sz) {
       char candidate[SNOVAC_PATH_MAX + 128];
       snprintf(candidate, sizeof(candidate), "%s/%s", cur, MANIFEST_NAMES[i]);
       if (path_is_file(candidate)) {
-        snprintf(out, out_sz, "%s", cur);
+        normalize_path_into(cur, out, out_sz);
         return 1;
       }
     }
     char parent[SNOVAC_PATH_MAX + 64];
     snprintf(parent, sizeof(parent), "%s/..", cur);
-    snprintf(cur, sizeof(cur), "%s", parent);
+    normalize_path_into(parent, cur, sizeof(cur));
   }
   return 0;
 }
@@ -116,11 +116,47 @@ static void scan_manifest_deps(SnPackageGraph *graph, const SnProject *proj, con
     }
     char line[512];
     int in_deps = 0;
+    int in_references = 0;
     int found_any = 0;
     while (fgets(line, sizeof(line), f)) {
         char *p = line;
         while (*p == ' ' || *p == '\t') p++;
-        if (strstr(p, "direct = [") || strstr(p, "direct=[") || strstr(p, "indirect = [") || strstr(p, "indirect=[")) {
+        if (strstr(p, "references = [") || strstr(p, "references=[") || strstr(p, "references [")) {
+            in_references = 1;
+        } else if (in_references && strchr(p, ']')) {
+            in_references = 0;
+        } else if (in_references) {
+            char *q1 = strchr(p, '"');
+            if (q1) {
+                q1++;
+                char *q2 = strchr(q1, '"');
+                if (q2) {
+                    *q2 = '\0';
+                    char sub_dir[SNOVAC_PATH_MAX];
+                    snprintf(sub_dir, sizeof(sub_dir), "%s/%s", proj->manifest_dir, q1);
+                    char sub_mod[SNOVAC_PATH_MAX];
+                    snprintf(sub_mod, sizeof(sub_mod), "%s/mod.sno", sub_dir);
+                    if (!path_is_dir(sub_dir)) {
+                        fprintf(stderr, "error[SNOVA0052]: referenced submodule '%s' directory does not exist: %s\n", q1, sub_dir);
+                        if (graph->diag) {
+                            SnSpan zero = {0, 0, 0, 0};
+                            sn_diag_emit(graph->diag, SN_DIAG_ERROR, 52, zero,
+                                         "referenced submodule '%s' directory does not exist", q1);
+                        }
+                    } else {
+                        /* Index submodule sources into graph */
+                        sn_pkggraph_scan_root(graph, sub_dir);
+                        if (path_is_file(sub_mod)) {
+                            SnProject sub_proj;
+                            memset(&sub_proj, 0, sizeof(sub_proj));
+                            normalize_path_into(sub_dir, sub_proj.manifest_dir, sizeof(sub_proj.manifest_dir));
+                            normalize_path_into(proj->deps_root, sub_proj.deps_root, sizeof(sub_proj.deps_root));
+                            scan_manifest_deps(graph, &sub_proj, sub_mod);
+                        }
+                    }
+                }
+            }
+        } else if (strstr(p, "direct = [") || strstr(p, "direct=[") || strstr(p, "indirect = [") || strstr(p, "indirect=[")) {
             in_deps = 1;
         } else if (in_deps && strchr(p, ']')) {
             in_deps = 0;
@@ -167,10 +203,8 @@ static void scan_manifest_deps(SnPackageGraph *graph, const SnProject *proj, con
 size_t scan_project_roots(SnPackageGraph *graph, const SnProject *proj) {
   size_t own = sn_pkggraph_scan_root(graph, proj->source_root);
   if (proj->has_manifest) {
-    char proj_root[SNOVAC_PATH_MAX];
     char manifest_path[SNOVAC_PATH_MAX + 64];
-    dirname_into(proj->source_root, proj_root, sizeof(proj_root));
-    snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj_root);
+    snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj->manifest_dir);
     scan_manifest_deps(graph, proj, manifest_path);
   } else if (proj->deps_root[0]) {
     sn_pkggraph_scan_root(graph, proj->deps_root);

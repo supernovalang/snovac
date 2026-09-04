@@ -161,6 +161,43 @@ static int run_git_clone_safe(const char *url, const char *version, const char *
 #endif
 }
 
+static int query_latest_remote_tag(const char *url, char *tag_out, size_t tag_sz) {
+    char cmd[1024];
+#if defined(_WIN32)
+    snprintf(cmd, sizeof(cmd), "git ls-remote --tags --sort=-v:refname \"%s\"", url);
+    FILE *pipe = _popen(cmd, "r");
+#else
+    snprintf(cmd, sizeof(cmd), "git ls-remote --tags --sort=-v:refname '%s' 2>/dev/null", url);
+    FILE *pipe = popen(cmd, "r");
+#endif
+    if (!pipe) return 0;
+
+    char line[512];
+    int found = 0;
+    while (fgets(line, sizeof(line), pipe)) {
+        char *ref = strstr(line, "refs/tags/");
+        if (ref) {
+            ref += 10;
+            size_t n = strlen(ref);
+            while (n > 0 && (ref[n - 1] == '\n' || ref[n - 1] == '\r' || ref[n - 1] == ' ' || ref[n - 1] == '\t')) {
+                ref[--n] = '\0';
+            }
+            if (strstr(ref, "^{}")) continue;
+            if (n > 0) {
+                snprintf(tag_out, tag_sz, "%s", ref);
+                found = 1;
+                break;
+            }
+        }
+    }
+#if defined(_WIN32)
+    _pclose(pipe);
+#else
+    pclose(pipe);
+#endif
+    return found;
+}
+
 static int fetch_dependency(const char *url_or_path, const char *version, const char *target_dir) {
     if (path_is_dir(target_dir)) {
         return 0; /* Already fetched */
@@ -198,20 +235,28 @@ static int fetch_dependency(const char *url_or_path, const char *version, const 
         snprintf(full_url, sizeof(full_url), "%s", url_or_path);
     }
 
+    /* Resolve version: if none provided or 'latest', query latest released tag */
+    char resolved_ver[128] = {0};
+    if (version && version[0] && strcmp(version, "latest") != 0) {
+        snprintf(resolved_ver, sizeof(resolved_ver), "%s", version);
+    } else {
+        query_latest_remote_tag(full_url, resolved_ver, sizeof(resolved_ver));
+    }
+
     /* 1. Try release tag `v<version>` (e.g. `v1.0.0`) */
-    if (version && version[0]) {
+    if (resolved_ver[0]) {
         char v_tag[128];
-        if (version[0] == 'v' || version[0] == 'V') {
-            snprintf(v_tag, sizeof(v_tag), "%s", version);
+        if (resolved_ver[0] == 'v' || resolved_ver[0] == 'V') {
+            snprintf(v_tag, sizeof(v_tag), "%s", resolved_ver);
         } else {
-            snprintf(v_tag, sizeof(v_tag), "v%s", version);
+            snprintf(v_tag, sizeof(v_tag), "v%s", resolved_ver);
         }
         if (run_git_clone_safe(full_url, v_tag, target_dir) == 0) {
             return 0;
         }
 
         /* 2. Try release tag `<version>` (e.g. `1.0.0`) */
-        const char *raw_ver = (version[0] == 'v' || version[0] == 'V') ? version + 1 : version;
+        const char *raw_ver = (resolved_ver[0] == 'v' || resolved_ver[0] == 'V') ? resolved_ver + 1 : resolved_ver;
         if (run_git_clone_safe(full_url, raw_ver, target_dir) == 0) {
             return 0;
         }

@@ -231,42 +231,11 @@ void report_errors(const SnDiagSink *diag, const char *path) {
 int find_builtin_root(const char *start_dir, char *out, size_t out_sz) {
   const char *env_std = getenv("SNOVA_STD_PATH");
   if (env_std && env_std[0] && path_is_dir(env_std)) {
-    snprintf(out, out_sz, "%s", env_std);
+    normalize_path_into(env_std, out, out_sz);
     return 1;
   }
 
-  char cur[SNOVAC_PATH_MAX + 64];
-  snprintf(cur, sizeof(cur), "%s", start_dir);
-  for (int i = 0; i < 8; i++) {
-    char candidate_std[SNOVAC_PATH_MAX + 128];
-    snprintf(candidate_std, sizeof(candidate_std), "%s/snova-std/src", cur);
-    if (path_is_dir(candidate_std)) {
-      snprintf(out, out_sz, "%s", candidate_std);
-      return 1;
-    }
-
-    char candidate_std_direct[SNOVAC_PATH_MAX + 128];
-    snprintf(candidate_std_direct, sizeof(candidate_std_direct), "%s/src", cur);
-    char test_file[SNOVAC_PATH_MAX + 160];
-    snprintf(test_file, sizeof(test_file), "%s/Snova/Std", candidate_std_direct);
-    if (path_is_dir(test_file)) {
-      snprintf(out, out_sz, "%s", candidate_std_direct);
-      return 1;
-    }
-
-    char candidate[SNOVAC_PATH_MAX + 128];
-    snprintf(candidate, sizeof(candidate), "%s/builtin", cur);
-    struct stat st;
-    if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
-      snprintf(out, out_sz, "%s", candidate);
-      return 1;
-    }
-    char parent[SNOVAC_PATH_MAX + 64];
-    snprintf(parent, sizeof(parent), "%s/..", cur);
-    snprintf(cur, sizeof(cur), "%s", parent);
-  }
-
-  /* User profile fallback */
+  /* 1. Prefer canonical installed standard library (~/.snovalang/std/src) */
 #if defined(_WIN32)
   const char *home = getenv("USERPROFILE");
 #else
@@ -276,9 +245,51 @@ int find_builtin_root(const char *start_dir, char *out, size_t out_sz) {
     char installed_std[SNOVAC_PATH_MAX + 128];
     snprintf(installed_std, sizeof(installed_std), "%s/.snovalang/std/src", home);
     if (path_is_dir(installed_std)) {
-      snprintf(out, out_sz, "%s", installed_std);
+      normalize_path_into(installed_std, out, out_sz);
       return 1;
     }
+  }
+
+  /* 2. Check project dependency .snovalang/deps/github.com/supernovalang/snova-std/src */
+  if (start_dir && start_dir[0]) {
+    char dep_std[SNOVAC_PATH_MAX + 128];
+    snprintf(dep_std, sizeof(dep_std), "%s/.snovalang/deps/github.com/supernovalang/snova-std/src", start_dir);
+    if (path_is_dir(dep_std)) {
+      normalize_path_into(dep_std, out, out_sz);
+      return 1;
+    }
+  }
+
+  /* 3. Sibling/development directory search (normalized, no relative .. in output) */
+  char cur[SNOVAC_PATH_MAX + 64];
+  normalize_path_into(start_dir, cur, sizeof(cur));
+  for (int i = 0; i < 8; i++) {
+    char candidate_std[SNOVAC_PATH_MAX + 128];
+    snprintf(candidate_std, sizeof(candidate_std), "%s/snova-std/src", cur);
+    if (path_is_dir(candidate_std)) {
+      normalize_path_into(candidate_std, out, out_sz);
+      return 1;
+    }
+
+    char candidate_std_direct[SNOVAC_PATH_MAX + 128];
+    snprintf(candidate_std_direct, sizeof(candidate_std_direct), "%s/src", cur);
+    char test_file[SNOVAC_PATH_MAX + 160];
+    snprintf(test_file, sizeof(test_file), "%s/Snova/Std", candidate_std_direct);
+    if (path_is_dir(test_file)) {
+      normalize_path_into(candidate_std_direct, out, out_sz);
+      return 1;
+    }
+
+    char candidate[SNOVAC_PATH_MAX + 128];
+    snprintf(candidate, sizeof(candidate), "%s/builtin", cur);
+    struct stat st;
+    if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
+      normalize_path_into(candidate, out, out_sz);
+      return 1;
+    }
+    char parent[SNOVAC_PATH_MAX + 64];
+    snprintf(parent, sizeof(parent), "%s/..", cur);
+    normalize_path_into(parent, cur, sizeof(cur));
   }
 
   return 0;

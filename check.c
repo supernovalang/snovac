@@ -1344,18 +1344,37 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
         result = inferred ? inferred : sn_type_unit(c->types);
         break;
     }
-    case SN_EXPR_STRUCT_LIT:
-        if (e->lhs) {
-            sn_check_expr(c, local, e->lhs);
+    case SN_EXPR_STRUCT_LIT: {
+        SnSymbol *sym = NULL;
+        if (e->lhs && e->lhs->text) {
+            sym = find_type_symbol_anywhere(c, c->enclosing_type, e->lhs->text);
         }
-        if (e->rhs) {
-            sn_check_expr(c, local, e->rhs);
+        if (sym && sym->kind == SN_SYM_TYPE) {
+            result = sn_type_named(c->types, sym, NULL, 0);
+            const SnDecl *td = sym->decl;
+            if (td) {
+                for (size_t i = 0; i < e->field_names.len; i++) {
+                    const char *fname = SN_LIST_AT(e->field_names, const char, i);
+                    SnExpr *arg = SN_LIST_AT(e->args, SnExpr, i);
+                    SnTypeRep *arg_ty = sn_check_expr(c, local, arg);
+                    SnSymbol *fsym = lookup_member_with_inheritance(c, td, sn_intern_cstr(c->intern, fname));
+                    if (!fsym) {
+                        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNKNOWN_MEMBER, arg->span,
+                                     "type `%s` has no field named `%s`", td->name, fname);
+                    } else {
+                        SnTypeRep *decl_ty = symbol_type(c, fsym);
+                        if (decl_ty && types_clash(c, decl_ty, arg_ty)) {
+                            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, arg->span,
+                                         "cannot assign incompatible value to field `%s`", fname);
+                        }
+                    }
+                }
+            }
+        } else {
+            result = sn_type_error(c->types);
         }
-        for (size_t i = 0; i < e->args.len; i++) {
-            sn_check_expr(c, local, SN_LIST_AT(e->args, SnExpr, i));
-        }
-        result = sn_type_error(c->types);
         break;
+    }
 
     default:
         result = sn_type_error(c->types);
@@ -1406,6 +1425,49 @@ static void check_match_exhaustiveness(SnChecker *c, const SnTypeRep *target_ty,
             }
         }
     }
+}
+
+/* ── loop analysis ───────────────────────────────────────────────────────── */
+
+static int stmt_can_exit_loop(const SnStmt *s) {
+    if (!s) return 0;
+    switch (s->kind) {
+    case SN_STMT_BREAK:
+    case SN_STMT_RETURN:
+    case SN_STMT_THROW:
+        return 1;
+    case SN_STMT_BLOCK:
+        for (size_t i = 0; i < s->stmts.len; i++) {
+            if (stmt_can_exit_loop(SN_LIST_AT(s->stmts, SnStmt, i))) return 1;
+        }
+        return 0;
+    case SN_STMT_IF:
+        if (stmt_can_exit_loop(s->then_br)) return 1;
+        if (s->else_br && stmt_can_exit_loop(s->else_br)) return 1;
+        return 0;
+    case SN_STMT_TRY:
+        if (stmt_can_exit_loop(s->then_br)) return 1;
+        for (size_t i = 0; i < s->catches.len; i++) {
+            if (stmt_can_exit_loop(SN_LIST_AT(s->catches, SnStmt, i))) return 1;
+        }
+        return 0;
+    case SN_STMT_MATCH:
+        for (size_t i = 0; i < s->arms.len; i++) {
+            const SnMatchArm *arm = SN_LIST_AT(s->arms, SnMatchArm, i);
+            if (arm->body && stmt_can_exit_loop(arm->body)) return 1;
+        }
+        return 0;
+    default:
+        return 0;
+    }
+}
+
+static int stmt_is_empty(const SnStmt *s) {
+    if (!s) return 1;
+    if (s->kind == SN_STMT_BLOCK) {
+        return s->stmts.len == 0;
+    }
+    return 0;
 }
 
 /* ── statements ───────────────────────────────────────────────────────────── */
@@ -1537,12 +1599,23 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
     }
 
     case SN_STMT_WHILE: {
+        int is_always_true = 0;
         if (s->expr) {
             SnTypeRep *cond = sn_check_expr(c, local, s->expr);
             if (!is_error(cond) && !sn_type_is_any(cond) && cond->tag != SN_T_BOOL) {
                 sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_CONDITION_NOT_BOOL, s->expr->span,
                             "condition must be `bool`");
             }
+            if (s->expr->kind == SN_EXPR_BOOL && s->expr->text && strcmp(s->expr->text, "true") == 0) {
+                is_always_true = 1;
+            }
+        }
+        if (stmt_is_empty(s->then_br)) {
+            sn_diag_emit(c->diag, SN_DIAG_WARNING, SNOVA_EMPTY_LOOP, s->span,
+                         "empty `while` loop body detected (potential busy-wait/dead code)");
+        } else if (is_always_true && !stmt_can_exit_loop(s->then_br)) {
+            sn_diag_emit(c->diag, SN_DIAG_WARNING, SNOVA_INFINITE_LOOP, s->span,
+                         "infinite `while (true)` loop has no `break`, `return`, or `throw` -- potential unintended busy hang");
         }
         if (s->then_br) {
             c->loop_depth++;
